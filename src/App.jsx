@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, CheckCircle, TrendingUp, Award, BookOpen } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, CheckCircle, TrendingUp, Award, BookOpen, Eye, EyeOff } from 'lucide-react';
 
 const StudentDashboard = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [studentData, setStudentData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,19 +55,19 @@ const StudentDashboard = () => {
         email: studentRow[1],
         stack: studentRow[2] || '',
         attendance: {
-          class1: parseFloat(studentRow[3]) || 0,  // Week 1
-          class2: parseFloat(studentRow[4]) || 0,  // Week 2
-          class3: parseFloat(studentRow[5]) || 0,  // Week 3
-          class4: parseFloat(studentRow[6]) || 0,  // Week 4
-          class5: parseFloat(studentRow[7]) || 0,  // Week 5
-          class6: parseFloat(studentRow[8]) || 0,  // Week 6
+          class1: parseFloat(studentRow[3]) || 0,
+          class2: parseFloat(studentRow[4]) || 0,
+          class3: parseFloat(studentRow[5]) || 0,
+          class4: parseFloat(studentRow[6]) || 0,
+          class5: parseFloat(studentRow[7]) || 0,
+          class6: parseFloat(studentRow[8]) || 0,
         },
         assessments: {
-          w1: parseFloat(studentRow[9]) || 0,   // AS W1 - 5%
-          w2: parseFloat(studentRow[10]) || 0,  // AS W2 - 10%
-          w3: parseFloat(studentRow[11]) || 0,  // AS W3 - 10%
-          w4: parseFloat(studentRow[12]) || 0,  // AS W4 - 10%
-          w5: parseFloat(studentRow[13]) || 0,  // AS W5 - 10%
+          w1: parseFloat(studentRow[9]) || 0,
+          w2: parseFloat(studentRow[10]) || 0,
+          w3: parseFloat(studentRow[11]) || 0,
+          w4: parseFloat(studentRow[12]) || 0,
+          w5: parseFloat(studentRow[13]) || 0,
         },
         softSkillBonus: parseFloat(studentRow[14]) || 0,
         linkedinBonus: parseFloat(studentRow[15]) || 0,
@@ -119,9 +120,9 @@ const StudentDashboard = () => {
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md animate-fadeIn">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-[#0A3DA8] to-[#FF6600] rounded-full mx-auto mb-4 flex items-center justify-center animate-bounce-slow">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#0A3DA8] to-[#FF6600] rounded-full mx-auto mb-4 flex items-center justify-center">
               <BookOpen className="text-white" size={32} />
             </div>
             <h1 className="text-3xl font-bold text-[#111827] mb-2">Student Dashboard</h1>
@@ -129,7 +130,7 @@ const StudentDashboard = () => {
           </div>
           
           <div className="space-y-4">
-            <div className="animate-slideUp" style={{ animationDelay: '0.1s' }}>
+            <div>
               <label className="block text-sm font-medium text-[#111827] mb-2">Email</label>
               <input
                 type="email"
@@ -141,20 +142,29 @@ const StudentDashboard = () => {
               />
             </div>
             
-            <div className="animate-slideUp" style={{ animationDelay: '0.2s' }}>
+            <div>
               <label className="block text-sm font-medium text-[#111827] mb-2">Password (Your Stack)</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A3DA8] focus:border-transparent transition-all duration-200"
-                placeholder="Enter your stack"
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-[#0A3DA8] focus:border-transparent transition-all duration-200"
+                  placeholder="Enter your stack"
+                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#0A3DA8] transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
             
             {error && (
-              <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg animate-shake">
+              <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
                 <AlertCircle size={16} />
                 {error}
               </div>
@@ -162,8 +172,7 @@ const StudentDashboard = () => {
             
             <button
               onClick={handleLogin}
-              className="w-full bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] text-white py-3 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 font-semibold animate-slideUp"
-              style={{ animationDelay: '0.3s' }}
+              className="w-full bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] text-white py-3 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 font-semibold"
             >
               Login
             </button>
@@ -194,7 +203,7 @@ const StudentDashboard = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-8">
       <div className="max-w-5xl mx-auto">
         {/* Header with Cohort Info */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 animate-fadeIn">
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-[#111827] mb-1">
@@ -212,18 +221,16 @@ const StudentDashboard = () => {
         </div>
 
         {/* Progress Bar */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 animate-slideUp" style={{ animationDelay: '0.1s' }}>
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-bold text-[#111827]">Overall Progress</h2>
             <span className="text-2xl font-bold text-[#0A3DA8]">{totals.total}%</span>
           </div>
           <div className="relative w-full h-6 bg-gray-200 rounded-full overflow-hidden">
             <div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] rounded-full transition-all duration-1000 ease-out animate-progressFill"
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] rounded-full transition-all duration-1000 ease-out"
               style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-            >
-              <div className="absolute inset-0 bg-white opacity-20 animate-shimmer"></div>
-            </div>
+            ></div>
           </div>
           <div className="flex justify-between mt-2 text-xs text-gray-500">
             <span>0%</span>
@@ -233,7 +240,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Grade Card */}
-        <div className="bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] rounded-2xl p-6 mb-6 text-white shadow-lg animate-slideUp" style={{ animationDelay: '0.2s' }}>
+        <div className="bg-gradient-to-r from-[#0A3DA8] to-[#FF6600] rounded-2xl p-6 mb-6 text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-sm mb-1">Current Grade</p>
@@ -247,11 +254,11 @@ const StudentDashboard = () => {
         </div>
 
         {/* Capstone Qualification */}
-        <div className={`rounded-2xl p-5 mb-6 flex items-center gap-3 shadow-lg animate-slideUp transition-all duration-300 ${
+        <div className={`rounded-2xl p-5 mb-6 flex items-center gap-3 shadow-lg transition-all duration-300 ${
           studentData?.qualifiedForCapstone 
             ? 'bg-green-50 border-2 border-green-300' 
             : 'bg-amber-50 border-2 border-amber-300'
-        }`} style={{ animationDelay: '0.3s' }}>
+        }`}>
           {studentData?.qualifiedForCapstone ? (
             <>
               <CheckCircle className="text-green-600 flex-shrink-0" size={28} />
@@ -272,7 +279,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Attendance Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 animate-slideUp transition-all duration-300 hover:shadow-xl" style={{ animationDelay: '0.4s' }}>
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 transition-all duration-300 hover:shadow-xl">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="text-[#0A3DA8]" size={24} />
             <h2 className="text-xl font-bold text-[#111827]">Attendance (25% Total)</h2>
@@ -295,7 +302,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Assessment Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 animate-slideUp transition-all duration-300 hover:shadow-xl" style={{ animationDelay: '0.5s' }}>
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 transition-all duration-300 hover:shadow-xl">
           <h2 className="text-xl font-bold text-[#111827] mb-4">Assessment Scores (45% Total)</h2>
           <div className="bg-gray-50 rounded-xl p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -321,7 +328,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Bonus Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 animate-slideUp transition-all duration-300 hover:shadow-xl" style={{ animationDelay: '0.6s' }}>
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 transition-all duration-300 hover:shadow-xl">
           <div className="flex items-center gap-2 mb-4">
             <Award className="text-[#FF6600]" size={24} />
             <h2 className="text-xl font-bold text-[#111827]">Bonus Sessions (5% Total)</h2>
@@ -341,7 +348,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Capstone Section */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 animate-slideUp transition-all duration-300 hover:shadow-xl" style={{ animationDelay: '0.7s' }}>
+        <div className="bg-white rounded-2xl shadow-lg p-6 transition-all duration-300 hover:shadow-xl">
           <h2 className="text-xl font-bold text-[#111827] mb-4">Capstone Project (20% Total)</h2>
           <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 border-2 border-indigo-200">
             <p className="text-sm text-indigo-800 font-medium mb-3">Capstone Score</p>
