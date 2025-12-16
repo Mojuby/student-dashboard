@@ -13,7 +13,7 @@ const StudentDashboard = () => {
   // Google Sheets configuration
   const SHEET_ID = '10CsVvDAN7cd1_tlynUYhCOFxLf4YOgseBLshR5SPr0o';
   const API_KEY = 'AIzaSyAHfXwtXl2aTqT7oSyRuxA4lxTkcLzzMSs';
-  const RANGE = "'Cohort 6 Grading'!A:T"; // Columns A through T
+  const RANGE = "'Cohort 6 Grading'!A:T100"; // Columns A through T
 
   const fetchStudentData = async (studentEmail, studentPassword) => {
     setLoading(true);
