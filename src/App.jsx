@@ -11,80 +11,109 @@ const StudentDashboard = () => {
   const [error, setError] = useState('');
   const [cohortNumber, setCohortNumber] = useState('6');
 
-  // Google Sheets configuration
-  const SHEET_ID = '10CsVvDAN7cd1_tlynUYhCOFxLf4YOgseBLshR5SPr0o';
-  const API_KEY = 'AIzaSyAHfXwtXl2aTqT7oSyRuxA4lxTkcLzzMSs';
-  const RANGE = "'Cohort 6 Grading'!A:T"; // Columns A through T
+  // BAD OLD CODE
 
-  const fetchStudentData = async (studentEmail, studentPassword) => {
-    setLoading(true);
-    setError('');
+  // const fetchStudentData = async (studentEmail, studentPassword) => {
+  //   setLoading(true);
+  //   setError('');
     
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${RANGE}?key=${API_KEY}`;
-      const response = await fetch(url);
-      const data = await response.json();
+  //   try {
+  //     const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${RANGE}?key=${API_KEY}`;
+  //     const response = await fetch(url);
+  //     const data = await response.json();
       
-      if (!data.values) {
-        throw new Error('No data found in sheet');
-      }
+  //     if (!data.values) {
+  //       throw new Error('No data found in sheet');
+  //     }
 
-      // Extract cohort number from sheet name
-      const cohortMatch = RANGE.match(/Cohort (\d+)/i);
-      if (cohortMatch) {
-        setCohortNumber(cohortMatch[1]);
-      }
+  //     // Extract cohort number from sheet name
+  //     const cohortMatch = RANGE.match(/Cohort (\d+)/i);
+  //     if (cohortMatch) {
+  //       setCohortNumber(cohortMatch[1]);
+  //     }
 
-      // Find student row (email is in column B, index 1)
-      //const headers = data.values[0];
-      const studentRow = data.values.find(row => row[1]?.toLowerCase().trim() === studentEmail.toLowerCase().trim());
+  //     // Find student row (email is in column B, index 1)
+  //     //const headers = data.values[0];
+  //     const studentRow = data.values.find(row => row[1]?.toLowerCase().trim() === studentEmail.toLowerCase().trim());
       
-      if (!studentRow) {
-        throw new Error('Student not found');
-      }
+  //     if (!studentRow) {
+  //       throw new Error('Student not found');
+  //     }
 
-      // Verify password matches stack (column C, index 2)
-      const studentStack = studentRow[2]?.toLowerCase() || '';
-      if (studentStack !== studentPassword.toLowerCase()) {
-        throw new Error('Invalid password');
-      }
+  //     // Verify password matches stack (column C, index 2)
+  //     const studentStack = studentRow[2]?.toLowerCase() || '';
+  //     if (studentStack !== studentPassword.toLowerCase()) {
+  //       throw new Error('Invalid password');
+  //     }
 
-      // Parse student data based on your column structure
-      const parsed = {
-        name: studentRow[0] || 'Student',
-        email: studentRow[1],
-        stack: studentRow[2] || '',
-        attendance: {
-          class1: parseFloat(studentRow[3]) || 0,
-          class2: parseFloat(studentRow[4]) || 0,
-          class3: parseFloat(studentRow[5]) || 0,
-          class4: parseFloat(studentRow[6]) || 0,
-          class5: parseFloat(studentRow[7]) || 0,
-          class6: parseFloat(studentRow[8]) || 0,
-        },
-        assessments: {
-          w1: parseFloat(studentRow[9]) || 0,
-          w2: parseFloat(studentRow[10]) || 0,
-          w3: parseFloat(studentRow[11]) || 0,
-          w4: parseFloat(studentRow[12]) || 0,
-          w5: parseFloat(studentRow[13]) || 0,
-        },
-        softSkillBonus: parseFloat(studentRow[14]) || 0,
-        linkedinBonus: parseFloat(studentRow[15]) || 0,
-        capstone: parseFloat(studentRow[16]) || 0,
-        totalGrade: parseFloat(studentRow[17]) || 0,
-        finalGrade: studentRow[18] || '',
-        qualifiedForCapstone: studentRow[19]?.toUpperCase().trim() === 'QUALIFIED'
-      };
+  //     // Parse student data based on your column structure
+  //     const parsed = {
+  //       name: studentRow[0] || 'Student',
+  //       email: studentRow[1],
+  //       stack: studentRow[2] || '',
+  //       attendance: {
+  //         class1: parseFloat(studentRow[3]) || 0,
+  //         class2: parseFloat(studentRow[4]) || 0,
+  //         class3: parseFloat(studentRow[5]) || 0,
+  //         class4: parseFloat(studentRow[6]) || 0,
+  //         class5: parseFloat(studentRow[7]) || 0,
+  //         class6: parseFloat(studentRow[8]) || 0,
+  //       },
+  //       assessments: {
+  //         w1: parseFloat(studentRow[9]) || 0,
+  //         w2: parseFloat(studentRow[10]) || 0,
+  //         w3: parseFloat(studentRow[11]) || 0,
+  //         w4: parseFloat(studentRow[12]) || 0,
+  //         w5: parseFloat(studentRow[13]) || 0,
+  //       },
+  //       softSkillBonus: parseFloat(studentRow[14]) || 0,
+  //       linkedinBonus: parseFloat(studentRow[15]) || 0,
+  //       capstone: parseFloat(studentRow[16]) || 0,
+  //       totalGrade: parseFloat(studentRow[17]) || 0,
+  //       finalGrade: studentRow[18] || '',
+  //       qualifiedForCapstone: studentRow[19]?.toUpperCase().trim() === 'QUALIFIED'
+  //     };
 
-      setStudentData(parsed);
-    } catch (err) {
-      setError(err.message || 'Failed to fetch data');
-      setIsLoggedIn(false);
-    } finally {
-      setLoading(false);
+  //     setStudentData(parsed);
+  //   } catch (err) {
+  //     setError(err.message || 'Failed to fetch data');
+  //     setIsLoggedIn(false);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+const fetchStudentData = async (studentEmail, studentPassword) => {
+  setLoading(true);
+  setError('');
+  
+  try {
+    const response = await fetch('http://localhost:3001/api/student-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: studentEmail,
+        password: studentPassword,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch data');
     }
-  };
+
+    const data = await response.json();
+    setStudentData(data);
+    setCohortNumber(data.cohortNumber || '6');
+  } catch (err) {
+    setError(err.message || 'Failed to fetch data');
+    setIsLoggedIn(false);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleLogin = () => {
     if (!email || !password) {
