@@ -88,7 +88,7 @@ const fetchStudentData = async (studentEmail, studentPassword) => {
   setError('');
   
   try {
-    const response = await fetch('http://localhost:3001/api/student-data', {
+    const response = await fetch('https://student-dashboard-0sdq.onrender.com/api/student-data', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
