@@ -25,11 +25,16 @@ app.post('/api/student-data', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
+    // Get the active cohort from environment variable
+    const activeCohort = process.env.ACTIVE_COHORT || '6';
+    const sheetName = `Cohort ${activeCohort} Grading`;
+    const range = `'${sheetName}'!A:T`;
+
     const authClient = await auth.getClient();
     const response = await sheets.spreadsheets.values.get({
       auth: authClient,
       spreadsheetId: process.env.SHEET_ID,
-      range: "'Cohort 6 Grading'!A:T",
+      range: range,
     });
 
     const rows = response.data.values;
@@ -42,7 +47,7 @@ app.post('/api/student-data', async (req, res) => {
     );
 
     if (!studentRow) {
-      return res.status(404).json({ error: 'Student not found' });
+      return res.status(404).json({ error: 'Student not found in active cohort' });
     }
 
     const studentStack = studentRow[2]?.toLowerCase() || '';
@@ -75,7 +80,7 @@ app.post('/api/student-data', async (req, res) => {
       totalGrade: parseFloat(studentRow[17]) || 0,
       finalGrade: studentRow[18] || '',
       qualifiedForCapstone: studentRow[19]?.toUpperCase().trim() === 'QUALIFIED',
-      cohortNumber: '6'
+      cohortNumber: activeCohort
     };
 
     res.json(studentData);
