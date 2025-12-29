@@ -311,7 +311,7 @@ const fetchStudentData = async (studentEmail, studentPassword) => {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 transition-all duration-300 hover:shadow-xl">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="text-[#0A3DA8]" size={24} />
-            <h2 className="text-xl font-bold text-[#111827]">Attendance (25% Total)</h2>
+            <h2 className="text-xl font-bold text-[#111827]">Attendance (30% Total)</h2>
           </div>
           <div className="bg-gray-50 rounded-xl p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
