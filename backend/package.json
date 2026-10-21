@@ -1,14 +1,25 @@
 {
-  "name": "student-dashboard-backend",
-  "version": "1.0.0",
-  "main": "server.js",
+  "name": "fuse-lms-backend",
+  "version": "2.0.0",
+  "main": "src/server.js",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "seed:admin": "node scripts/seed-admin.js",
+    "seed:facilitators": "node scripts/seed-facilitators.js",
+    "test": "node --test"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "cors": "^2.8.5",
     "googleapis": "^128.0.0",
-    "dotenv": "^16.3.1"
+    "helmet": "^7.1.0",
+    "luxon": "^3.5.0",
+    "pg": "^8.12.0",
+    "zod": "^3.23.8"
   }
 }
