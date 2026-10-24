@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { z } = require('zod');
-const { query, tx } = require('../db');
+const { query } = require('../db');
 const { audit } = require('../lib/audit');
 const { wrap, httpError, uuid } = require('../lib/http');
 const { normalizeWhatsAppInvite, normalizeHttps } = require('../lib/urls');
@@ -14,10 +14,13 @@ const { runReminders } = require('../services/reminders');
 const log = (req, action, entityType, entityId, details) =>
   audit({ actorId: req.user.id, action, entityType, entityId, details, ip: req.ip });
 
+// An explicit ?cohortId is always honoured (any status, so history stays reachable). Without one we fall back to the
+// most recent ACTIVE cohort; several can be active at once, so the UI should always send cohortId.
 async function cohortIdFrom(req) {
   if (req.query.cohortId) return uuid(req.query.cohortId);
-  const { rows: [c] } = await query('select id from cohorts where is_active');
-  if (!c) throw httpError(404, 'No active cohort. Activate one first.');
+  const { rows: [c] } = await query(
+    'select id from cohorts where is_active order by (number = $1::int) desc nulls last, number desc limit 1', [config.activeCohortNumber]);
+  if (!c) throw httpError(404, 'No active cohort. Choose a cohort.');
   return c.id;
 }
 async function cohortTz(cohortId) {
@@ -29,10 +32,16 @@ const localDate = (v, tz) => { try { return toUtcDate(v, tz); } catch { throw ht
 
 // ---------- Learners ----------
 router.get('/learners-overview', wrap(async (req, res) => {
-  const p = await loadProgress({ cohortId: await cohortIdFrom(req) });
+  const stackId = req.query.stackId ? uuid(req.query.stackId) : null;
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 200));
+  const pg = Math.max(1, Number(req.query.page) || 1);
+  const p = await loadProgress({ cohortId: await cohortIdFrom(req), stackId });
+  const matched = p.learners.filter((l) => !q || l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q));
   res.json({
     cohort: { id: p.cohort.id, number: p.cohort.number },
-    learners: p.learners.map((l) => ({
+    total: matched.length, page: pg, pageSize,
+    learners: matched.slice((pg - 1) * pageSize, pg * pageSize).map((l) => ({
       id: l.id, name: l.name, email: l.email, stack: l.stack, cohortNumber: p.cohort.number, group: l.group,
       completionPct: l.completionPct, scorePct: l.scorePct, latestScore: l.latestScore,
       riskStatus: l.risk.status, riskCount: l.risk.reasons.length, potentiallyDisengaged: l.risk.potentiallyDisengaged,
@@ -43,10 +52,18 @@ router.get('/learners-overview', wrap(async (req, res) => {
 
 router.get('/learners/:id', wrap(async (req, res) => {
   const id = uuid(req.params.id);
-  const { rows: [l] } = await query('select cohort_id from learners where id = $1', [id]);
+  const { rows: [l] } = await query(
+    `select l.cohort_id, l.status, l.invited_at, l.activated_at, l.orientation_completed_at, l.withdrawn_at, (l.profile_id is not null) as has_account
+     from learners l where l.id = $1`, [id]);
   if (!l) throw httpError(404, 'Learner not found');
   const p = await loadProgress({ cohortId: l.cohort_id, learnerId: id });
-  res.json({ cohort: { number: p.cohort.number, timezone: p.cohort.timezone }, learner: p.learners[0] });
+  const { rows: [inv] } = await query(
+    `select delivery_status, delivery_attempts, delivery_error, sent_at, expires_at, used_at from invites where learner_id = $1 order by created_at desc limit 1`, [id]);
+  res.json({
+    cohort: { number: p.cohort.number, timezone: p.cohort.timezone },
+    learner: p.learners[0],
+    enrolment: { status: l.status, hasAccount: l.has_account, invitedAt: l.invited_at, activatedAt: l.activated_at, orientationCompletedAt: l.orientation_completed_at, withdrawnAt: l.withdrawn_at, invitation: inv || null },
+  });
 }));
 
 // ---------- Capstone groups ----------

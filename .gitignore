@@ -27,3 +27,8 @@ dist-ssr
 backend/.env
 backend/scripts/*.local.json
 backend/*.csv
+# secrets and local-only data (never commit)
+.env
+.env.*
+!.env.example
+*.local.json

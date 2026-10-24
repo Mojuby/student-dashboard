@@ -5,6 +5,7 @@ const { lockoutDecision, THRESHOLDS } = require('./lockout');
 const emailKey = (email) => crypto.createHash('sha256').update(String(email).trim().toLowerCase()).digest('hex');
 
 async function checkLockout(scope, email, ip) {
+  if (!(scope in THRESHOLDS)) throw new Error(`Unknown lockout scope: ${scope}`);
   const { rows: [r] } = await query(
     `select
       (select count(*) from login_attempts where scope=$1 and email_key=$2 and not succeeded and created_at > now() - interval '60 minutes') as ef,

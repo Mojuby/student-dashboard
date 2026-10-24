@@ -4,7 +4,9 @@ const { evaluateRisk } = require('../lib/risk');
 
 // One loader feeds the learner, facilitator, admin and analytics views, so numbers always agree.
 // facilitatorId limits to that facilitator's assigned (cohort, stack) pairs. learnerId limits to one learner.
-async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, now = new Date() }) {
+// learnerView: a learner only ever sees PUBLISHED grades and feedback; a graded-but-unpublished submission looks like
+// "submitted, awaiting grade". Staff views (facilitator/admin/analytics) see every saved grade.
+async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, stackId = null, learnerView = false, now = new Date() }) {
   const { rows: [cohort] } = await query(
     `select id, number, timezone, week1_class_date::text as week1_class_date, risk_low_score_pct, risk_missing_threshold
      from cohorts where id = $1`, [cohortId]);
@@ -22,9 +24,10 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
          and ($2::uuid is null or exists (select 1 from facilitator_assignments fa
               where fa.facilitator_id = $2 and fa.cohort_id = l.cohort_id and fa.stack_id = l.stack_id))
          and ($3::uuid is null or l.id = $3)
-       order by s.name, l.full_name`, [cohortId, facilitatorId, learnerId]),
+         and ($4::uuid is null or l.stack_id = $4)
+       order by s.name, l.full_name`, [cohortId, facilitatorId, learnerId, stackId]),
     query(
-      `select sub.id, sub.assessment_id, sub.learner_id, sub.url, sub.submitted_at, sub.updated_at, gr.score, gr.feedback, gr.graded_at
+      `select sub.id, sub.assessment_id, sub.learner_id, sub.url, sub.submitted_at, sub.updated_at, gr.score, gr.feedback, gr.graded_at, gr.published_at
        from submissions sub join assessments a on a.id = sub.assessment_id
        left join grades gr on gr.submission_id = sub.id where a.cohort_id = $1`, [cohortId]),
     query(
@@ -50,13 +53,17 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
     const cells = assessments.map((a) => {
       const s = subMap.get(`${a.id}:${l.id}`);
       const dueAt = effectiveDue(a.dueAt, extMap.get(`${a.id}:${l.id}`));
-      const graded = !!s && s.score != null;
+      const hasGrade = !!s && s.score != null;
+      const published = hasGrade && s.published_at != null;
+      const graded = learnerView ? published : hasGrade; // "visible" grade for this audience
       return {
         assessmentId: a.id, weekNumber: a.weekNumber, title: a.title, maxScore: a.maxScore,
         opensAt: a.opensAt, dueAt, baseDueAt: a.dueAt, isEnabled: a.isEnabled,
         submitted: !!s, submissionId: s?.id ?? null, url: s?.url ?? null,
         submittedAt: s?.submitted_at ?? null, updatedAt: s?.updated_at ?? null,
-        score: graded ? Number(s.score) : null, feedback: s?.feedback ?? null, gradedAt: s?.graded_at ?? null,
+        score: graded ? Number(s.score) : null, feedback: graded ? (s.feedback ?? null) : null, gradedAt: graded ? s.graded_at : null,
+        // A learner is never told a draft exists: unpublished looks the same as not yet graded.
+        gradeState: !s ? 'none' : (!hasGrade || (learnerView && !published)) ? 'awaiting_grade' : published ? 'published' : 'draft',
         status: learnerStatus({ now, opensAt: a.opensAt, dueAt, isEnabled: a.isEnabled, hasSubmission: !!s, isGraded: graded }),
       };
     });

@@ -34,12 +34,13 @@ export default function AdminSchedule() {
   const [msg, setMsg] = useState('');
   const [editing, setEditing] = useState(null);
 
-  const load = useCallback(async (id) => {
-    const [a, e, r] = await Promise.all([api(`/admin/assessments?cohortId=${id}`), api(`/admin/events?cohortId=${id}`), api(`/admin/reminders?cohortId=${id}`)]);
-    setSched(a); setEvents(e); setRem(r);
-  }, []);
+  const fetchAll = (id) => Promise.all([api(`/admin/assessments?cohortId=${id}`), api(`/admin/events?cohortId=${id}`), api(`/admin/reminders?cohortId=${id}`)]);
+  const load = useCallback(async (id) => { const [a, e, r] = await fetchAll(id); setSched(a); setEvents(e); setRem(r); }, []);
   useEffect(() => { api('/admin/stacks').then((r) => setStacks(r.stacks)).catch(() => {}); }, []);
-  useEffect(() => { if (cohortId) load(cohortId).catch((e) => setErr(e.message)); }, [cohortId, load]);
+  useEffect(() => {
+    if (!cohortId) return;
+    fetchAll(cohortId).then(([a, e, r]) => { setSched(a); setEvents(e); setRem(r); }).catch((e) => setErr(e.message));
+  }, [cohortId]);
 
   async function run(fn, ok) {
     setErr(''); setMsg('');

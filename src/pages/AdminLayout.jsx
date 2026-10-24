@@ -1,17 +1,26 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../auth/context';
 
-const links = [['/admin', 'Setup', true], ['/admin/learners', 'Learners'], ['/admin/groups', 'Capstone groups'], ['/admin/schedule', 'Schedule'], ['/admin/analytics', 'Analytics']];
+const links = [
+  ['/admin', 'Setup', true], ['/admin/onboarding', 'Onboarding'], ['/admin/learners', 'Learners'], ['/admin/facilitators', 'Facilitators'],
+  ['/admin/groups', 'Capstone groups'], ['/admin/schedule', 'Schedule'], ['/admin/analytics', 'Analytics'], ['/admin/activity', 'Activity log'],
+];
 
 export default function AdminLayout() {
+  const { user, logout } = useAuth();
   return (
     <div className="min-h-screen bg-brand-bg font-body">
-      <nav aria-label="Admin" className="bg-brand-navy px-4 py-2 flex gap-1 overflow-x-auto">
+      <nav aria-label="Admin" className="bg-brand-navy px-4 py-2 flex items-center gap-1 overflow-x-auto">
         {links.map(([to, label, end]) => (
           <NavLink key={to} to={to} end={end}
             className={({ isActive }) => `px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap ${isActive ? 'bg-brand-blue text-white' : 'text-white/80 hover:text-white'}`}>
             {label}
           </NavLink>
         ))}
+        <span className="ml-auto flex items-center gap-3 pl-4 text-sm text-white/80 whitespace-nowrap">
+          {user?.email}
+          <button onClick={logout} className="underline hover:text-white">Logout</button>
+        </span>
       </nav>
       <Outlet />
     </div>

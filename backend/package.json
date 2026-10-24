@@ -2,14 +2,18 @@
   "name": "fuse-lms-backend",
   "version": "2.0.0",
   "main": "src/server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
     "seed:admin": "node scripts/seed-admin.js",
     "seed:facilitators": "node scripts/seed-facilitators.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
+    "reminders": "node scripts/run-reminders.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",

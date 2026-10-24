@@ -67,6 +67,13 @@ export default function AdminLearners() {
           <button onClick={() => setDetail(null)} className="float-right text-brand-body hover:text-brand-blue">Close ✕</button>
           <h2 className="font-heading text-2xl font-bold text-brand-navy">{detail.learner.name}</h2>
           <p className="text-sm text-brand-body">{detail.learner.email} · {detail.learner.stack} · Cohort {detail.cohort.number}</p>
+          {detail.enrolment && (
+            <div className="text-sm mt-2 bg-slate-50 border border-brand-border rounded-lg p-3">
+              <p><StatusBadge status={detail.enrolment.status} /> {detail.enrolment.hasAccount ? 'Account created' : 'No account yet'}</p>
+              <p className="text-brand-body">Invited {fmt(detail.enrolment.invitedAt)} · Activated {fmt(detail.enrolment.activatedAt)} · Orientation {detail.enrolment.orientationCompletedAt ? 'complete' : 'not complete'}</p>
+              {detail.enrolment.invitation && <p className="text-brand-body">Invitation email: {detail.enrolment.invitation.delivery_status}{detail.enrolment.invitation.delivery_error ? ` (${detail.enrolment.invitation.delivery_error})` : ''}</p>}
+            </div>
+          )}
           <p className="text-sm mt-1">Capstone group: {detail.learner.group ? detail.learner.group.name : 'Not assigned'}</p>
           <p className="text-sm">Completion {detail.learner.completionPct}% · Score {detail.learner.scorePct ?? '—'}%</p>
 

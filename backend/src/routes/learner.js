@@ -2,71 +2,114 @@ const router = require('express').Router();
 const { z } = require('zod');
 const { query, tx } = require('../db');
 const { wrap, httpError, uuid } = require('../lib/http');
+const logger = require('../lib/logger');
 const { normalizeDocUrl } = require('../lib/urls');
 const { windowState } = require('../lib/assessmentState');
 const { computeTotals } = require('../lib/grading');
 const { fetchCohortRows, buildDashboard } = require('../services/sheets');
 const { loadProgress } = require('../services/progress');
+const { getOrientation, completeOrientationItem } = require('../services/onboarding');
 
-// The learner is always derived from the session, never from an id in the request.
+const withCode = (err, code) => Object.assign(err, { errorCode: code });
+
+// The learner and cohort are always derived from the session's own enrolments, never from an id in the request.
+// If a learner is enrolled in several active cohorts, the most recent one is used.
 async function getLearner(profileId) {
   const { rows: [l] } = await query(
-    `select l.id, l.email, l.cohort_id, l.stack_id, c.number, c.timezone
-     from learners l join cohorts c on c.id = l.cohort_id where l.profile_id = $1 and c.is_active`, [profileId]);
+    `select l.id, l.email, l.full_name, l.status, l.cohort_id, l.stack_id, s.name as stack,
+            c.number, c.name as cohort_name, c.timezone, c.status as cohort_status, c.week1_class_date::text as week1_class_date
+     from learners l join cohorts c on c.id = l.cohort_id join stacks s on s.id = l.stack_id
+     where l.profile_id = $1 and c.status = 'active' and l.status <> 'withdrawn'
+     order by c.number desc limit 1`, [profileId]);
   if (!l) throw httpError(403, 'Your cohort is not currently active.');
   return l;
 }
 
 router.get('/dashboard', wrap(async (req, res) => {
   const l = await getLearner(req.user.id);
-  const rows = await fetchCohortRows(l.number);
-  const row = rows.find((r) => r[1]?.toLowerCase().trim() === l.email.toLowerCase());
-  if (!row) throw httpError(404, 'Your grades are not available yet.');
+  let rows;
+  try {
+    rows = await fetchCohortRows(l.number);
+  } catch (e) {
+    logger.error('learner.dashboard.sheet_failed', { requestId: req.id, message: e.message });
+    throw withCode(httpError(503, 'Your grades are temporarily unavailable. Please try again shortly.'), 'GRADES_UNAVAILABLE');
+  }
+  const row = rows.slice(1).find((r) => String(r[1] || '').toLowerCase().trim() === l.email.toLowerCase());
+  if (!row) throw withCode(httpError(404, 'Your grades are not available yet.'), 'NO_GRADE_RECORD');
   const data = buildDashboard(row, l.number);
 
-  // A grade saved in the LMS overrides the sheet's assessment column for that week.
+  // A PUBLISHED grade saved in the LMS overrides the sheet's assessment column for that week.
+  // Drafts are never shown to the learner.
   const { rows: grades } = await query(
     `select a.week_number, g.score from grades g join submissions s on s.id = g.submission_id
-     join assessments a on a.id = s.assessment_id where s.learner_id = $1`, [l.id]);
+     join assessments a on a.id = s.assessment_id where s.learner_id = $1 and g.published_at is not null`, [l.id]);
   for (const g of grades) data.assessments[`w${g.week_number}`] = Number(g.score);
   data.totals = computeTotals(data);
+  data.hasScores = data.totals.hasScores;
   res.json(data);
 }));
 
 router.get('/overview', wrap(async (req, res) => {
   const l = await getLearner(req.user.id);
-  const progress = await loadProgress({ cohortId: l.cohort_id, learnerId: l.id });
+  const progress = await loadProgress({ cohortId: l.cohort_id, learnerId: l.id, learnerView: true });
   const me = progress.learners[0];
+  if (!me) throw httpError(404, 'Your enrolment could not be found.');
   const now = new Date();
 
-  const { rows: ev } = await query(
-    `select id, title, description, event_type, starts_at, ends_at, link_url from events
-     where cohort_id = $1 and is_active and (stack_id is null or stack_id = $2) and coalesce(ends_at, starts_at) >= now()
-     order by starts_at limit 15`, [l.cohort_id, l.stack_id]);
+  const [ev, grp, ann, orientation, enrol] = await Promise.all([
+    query(
+      `select id, title, description, event_type, starts_at, ends_at, link_url from events
+       where cohort_id = $1 and is_active and (stack_id is null or stack_id = $2) and coalesce(ends_at, starts_at) >= now()
+       order by starts_at limit 15`, [l.cohort_id, l.stack_id]),
+    query(`select g.name, g.whatsapp_url from capstone_members m join capstone_groups g on g.id = m.group_id where m.learner_id = $1`, [l.id]),
+    query(
+      `select id, title, body, created_at from announcements
+       where cohort_id = $1 and is_active and (stack_id is null or stack_id = $2) order by created_at desc limit 10`, [l.cohort_id, l.stack_id]),
+    getOrientation(l.id),
+    query(`select count(*)::int as n from learners where profile_id = $1 and status <> 'withdrawn'`, [req.user.id]),
+  ]);
+
   // Assessment dates come from the assessment schedule itself (including this learner's extensions).
   const derived = me.cells.filter((c) => c.isEnabled).flatMap((c) => [
     { title: `Week ${c.weekNumber} assessment opens`, eventType: 'assessment_open', startsAt: c.opensAt },
     { title: `Week ${c.weekNumber} assessment due`, eventType: 'assessment_deadline', startsAt: c.dueAt },
   ]).filter((e) => new Date(e.startsAt) >= now);
   const events = [
-    ...ev.map((e) => ({ title: e.title, description: e.description, eventType: e.event_type, startsAt: e.starts_at, endsAt: e.ends_at, linkUrl: e.link_url })),
+    ...ev.rows.map((e) => ({ title: e.title, description: e.description, eventType: e.event_type, startsAt: e.starts_at, endsAt: e.ends_at, linkUrl: e.link_url })),
     ...derived,
   ].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)).slice(0, 12);
-
-  const { rows: [group] } = await query(
-    `select g.name, g.whatsapp_url from capstone_members m join capstone_groups g on g.id = m.group_id where m.learner_id = $1`, [l.id]);
+  const nextClass = ev.rows.find((e) => e.event_type === 'class');
 
   res.json({
     timezone: l.timezone,
+    learner: { name: l.full_name, email: l.email, status: l.status },
+    cohort: { number: l.number, name: l.cohort_name, week1ClassDate: l.week1_class_date },
+    stack: l.stack,
+    enrolmentCount: enrol.rows[0].n,
+    orientation: { required: ['activated', 'orientation'].includes(l.status), ...orientation },
+    announcements: ann.rows.map((a) => ({ id: a.id, title: a.title, body: a.body, createdAt: a.created_at })),
+    nextClass: nextClass ? { title: nextClass.title, startsAt: nextClass.starts_at, linkUrl: nextClass.link_url } : null,
     assessments: me.cells.filter((c) => c.isEnabled).map((c) => ({
       id: c.assessmentId, weekNumber: c.weekNumber, title: c.title, maxScore: c.maxScore,
-      opensAt: c.opensAt, dueAt: c.dueAt, status: c.status,
+      opensAt: c.opensAt, dueAt: c.dueAt, status: c.status, gradeState: c.gradeState,
       submission: c.url ? { url: c.url, submittedAt: c.submittedAt } : null,
-      score: c.score, feedback: c.feedback,
+      score: c.score, feedback: c.feedback, // null until a facilitator publishes: never a fake zero
     })),
-    group: group ? { name: group.name, whatsappUrl: group.whatsapp_url } : null, // read-only
+    group: grp.rows[0] ? { name: grp.rows[0].name, whatsappUrl: grp.rows[0].whatsapp_url } : null, // read-only
     events,
   });
+}));
+
+router.get('/orientation', wrap(async (req, res) => {
+  const l = await getLearner(req.user.id);
+  res.json({ status: l.status, ...(await getOrientation(l.id)) });
+}));
+
+router.post('/orientation/:key', wrap(async (req, res) => {
+  const l = await getLearner(req.user.id);
+  const orientation = await completeOrientationItem(l.id, String(req.params.key));
+  const { rows: [now] } = await query('select status from learners where id = $1', [l.id]);
+  res.json({ status: now.status, ...orientation });
 }));
 
 router.put('/assessments/:id/submission', wrap(async (req, res) => {
@@ -77,6 +120,7 @@ router.put('/assessments/:id/submission', wrap(async (req, res) => {
   const l = await getLearner(req.user.id);
 
   // The deadline rule lives in the WHERE clause, so a manipulated frontend or direct API call cannot bypass it.
+  // The assessment must belong to the learner's own cohort.
   const saved = await tx(async (c) => {
     const { rows: [row] } = await c.query(
       `insert into submissions (assessment_id, learner_id, url)

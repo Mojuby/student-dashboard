@@ -8,7 +8,9 @@ import { Banner, Card, StatusBadge } from '../components/ui';
 const NOTICE = 'Important: Before submitting, ensure your Google Doc or Google Drive folder is accessible to the relevant reviewers. Set the sharing permissions so anyone with the link can view the deliverables. FUSE Varsity does not automatically verify or change your Google Drive sharing permissions.';
 
 function AssessmentCard({ a, tz, onSaved }) {
-  const [url, setUrl] = useState(a.submission?.url || '');
+  // Keep what the learner typed if their session expires mid-edit.
+  const draftKey = `fv.draft.${a.id}`;
+  const [url, setUrl] = useState(() => sessionStorage.getItem(draftKey) ?? a.submission?.url ?? '');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,6 +21,7 @@ function AssessmentCard({ a, tz, onSaved }) {
     setBusy(true); setErr(''); setMsg('');
     try {
       await api(`/learner/assessments/${a.id}/submission`, { method: 'PUT', body: { url } });
+      sessionStorage.removeItem(draftKey);
       setMsg('Link saved.');
       onSaved();
     } catch (e2) {
@@ -45,6 +48,10 @@ function AssessmentCard({ a, tz, onSaved }) {
         </div>
       )}
 
+      {a.status !== 'graded' && a.gradeState === 'awaiting_grade' && a.submission && (
+        <p className="mt-3 text-sm text-brand-body">Submitted. Your grade and feedback will appear here once your facilitator publishes them.</p>
+      )}
+
       {a.status === 'locked' && <p className="mt-3 text-sm text-brand-body">This assessment opens on {fmt(a.opensAt, tz)}.</p>}
       {a.status === 'closed' && <p className="mt-3 text-sm text-brand-body">The deadline has passed and no submission was received.</p>}
 
@@ -57,7 +64,7 @@ function AssessmentCard({ a, tz, onSaved }) {
           <p className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900">{NOTICE}</p>
           <label className="block">
             <span className="text-sm font-semibold text-brand-navy">Google Docs or Google Drive folder link</span>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!editable || busy}
+            <input type="url" value={url} onChange={(e) => { setUrl(e.target.value); sessionStorage.setItem(draftKey, e.target.value); }} disabled={!editable || busy}
               placeholder="https://docs.google.com/document/d/…" className="mt-1 w-full px-3 py-2 border border-brand-line rounded-lg disabled:bg-slate-100" />
           </label>
           <Banner error={err} message={msg} />
