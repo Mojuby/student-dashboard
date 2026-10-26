@@ -8,7 +8,7 @@ const { checkLockout, recordAttempt, emailKey } = require('../lib/attempts');
 const { codeMatches } = require('../lib/codes');
 const { audit } = require('../lib/audit');
 const { wrap, httpError, emailField } = require('../lib/http');
-const { requireAuth, setSessionCookies, clearSessionCookies } = require('../middleware/auth');
+const { requireAuth, setSessionCookies, clearSessionCookies, cookieNames, portalOf } = require('../middleware/auth');
 const { issueInvitation } = require('../services/invitations');
 
 const loginSchema = z.object({ email: emailField, password: z.string().min(1).max(200) });
@@ -226,19 +226,19 @@ router.post('/reset-password', wrap(async (req, res) => {
 
   const { data, error } = await admin.auth.getUser(parsed.data.accessToken);
   if (error || !data.user) return bad();
-  const { rows: [p] } = await query('select id, is_active from profiles where id = $1', [data.user.id]);
+  const { rows: [p] } = await query('select id, is_active, role from profiles where id = $1', [data.user.id]);
   if (!p || !p.is_active) return bad();
   const { error: upErr } = await admin.auth.admin.updateUserById(p.id, { password: parsed.data.newPassword });
   if (upErr) throw httpError(400, 'That password was rejected. Try a longer or less common one.');
   await query('update profiles set must_change_password = false where id = $1', [p.id]);
   await audit({ actorId: p.id, action: 'auth.password_reset', ip });
-  clearSessionCookies(res);
+  clearSessionCookies(res, p.role);
   res.json({ ok: true });
 }));
 
-router.get('/me', requireAuth, (req, res) => res.json({ user: req.user }));
+   router.get('/me', requireAuth(portalOf), (req, res) => res.json({ user: req.user }));
 
-router.post('/change-password', requireAuth, wrap(async (req, res) => {
+router.post('/change-password', requireAuth(portalOf), wrap(async (req, res) => {
   const parsed = changeSchema.safeParse(req.body);
   if (!parsed.success) throw httpError(400, 'New password must be at least 10 characters');
   const { currentPassword, newPassword } = parsed.data;
@@ -256,14 +256,16 @@ router.post('/change-password', requireAuth, wrap(async (req, res) => {
   if (upErr) throw httpError(400, 'That password was rejected. Try a longer or less common one.');
   await query('update profiles set must_change_password = false where id = $1', [req.user.id]);
   await audit({ actorId: req.user.id, action: 'auth.password_changed', ip });
-  clearSessionCookies(res); // force a fresh login with the new password
+  clearSessionCookies(res, req.user.role);
   res.json({ ok: true });
 }));
 
+// Ends only the portal the request came from; other portals open in the same browser stay signed in.
 router.post('/logout', wrap(async (req, res) => {
-  const at = req.cookies.fv_at;
-  if (at) await admin.auth.admin.signOut(at).catch(() => {});
-  clearSessionCookies(res);
+  const portal = portalOf(req);
+  const at = req.cookies[cookieNames(portal).at];
+  if (at) { try { await admin.auth.admin.signOut(at); } catch { /* best effort: the cookies are cleared either way */ } }
+  clearSessionCookies(res, portal);
   res.json({ ok: true });
 }));
 

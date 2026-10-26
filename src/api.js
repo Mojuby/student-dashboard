@@ -1,3 +1,4 @@
+import { getPortal } from './lib/portal';
 export const SESSION_EXPIRED = 'fv:session-expired';
 
 // One client for the whole app. Same-origin (Vercel proxies /api to the backend) so the session cookie is first-party.
@@ -8,7 +9,7 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
       method,
       credentials: 'same-origin',
       signal,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { 'X-FV-Portal': getPortal(), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (e) {

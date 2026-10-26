@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, SESSION_EXPIRED } from '../api';
 import { AuthContext } from './context';
+import { rememberPortal } from '../lib/portal';
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -20,6 +21,7 @@ export default function AuthProvider({ children }) {
 
   const login = async (role, email, password) => {
     const { user: u } = await api(`/auth/${role}/login`, { method: 'POST', body: { email, password } });
+    rememberPortal(role);
     setUser(u);
     return u;
   };

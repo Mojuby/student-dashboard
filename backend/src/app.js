@@ -155,8 +155,9 @@ app.get('/api/ready', wrap(async (req, res) => {
 // Authentication routes.
 app.use('/api/auth', require('./routes/auth'));
 
+// Each guard reads only its own portal's session cookies (see middleware/auth.js).
 const guard = (role) => [
-  requireAuth,
+  requireAuth(role),
   requirePasswordChanged,
   requireRole(role)
 ];
