@@ -22,6 +22,7 @@ export default function AdminHome() {
   const [annCohort, setAnnCohort] = useState('');
   const [anns, setAnns] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [newStacks, setNewStacks] = useState({});
 
   const load = useCallback(async () => {
     const [c, s] = await Promise.all([api('/admin/cohorts'), api('/admin/stacks')]);
@@ -43,9 +44,14 @@ export default function AdminHome() {
   const formData = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); e.currentTarget.reset(); return f; };
   const refreshAnns = () => api(`/admin/announcements?cohortId=${annCohort}`).then((r) => setAnns(r.announcements));
 
-  const createCohort = (e) => {
+  const createCohort = async (e) => {
     const f = formData(e);
-    run(() => api('/admin/cohorts', { method: 'POST', body: { number: Number(f.number), week1ClassDate: f.date } }), 'Cohort created (status: upcoming)');
+    const stackIds = Object.keys(newStacks).filter((k) => newStacks[k]);
+    const r = await run(() => api('/admin/cohorts', { method: 'POST', body: { number: Number(f.number), week1ClassDate: f.date, stackIds, classTime: f.classTime || '10:00' } }));
+    if (r) {
+      setNewStacks({});
+      setMsg(`Cohort created (status: upcoming)${stackIds.length ? ` with a default class calendar for ${stackIds.length} stack(s): ${r.cohort.calendar.created} events. Edit them on the Schedule page.` : '. Add its calendar on the Schedule page.'}`);
+    }
   };
   const setStatus = (c, status) => {
     if (status === c.status) return;
@@ -102,6 +108,14 @@ export default function AdminHome() {
           <form onSubmit={createCohort} className="flex flex-wrap gap-3 items-end">
             <label className="w-32"><span className="text-sm font-semibold">Cohort no.</span><input name="number" type="number" min="1" className={input} required /></label>
             <label className="w-48"><span className="text-sm font-semibold">Week 1 class date (a Saturday)</span><input name="date" type="date" className={input} required /></label>
+            <label className="w-40"><span className="text-sm font-semibold">Class start time</span><input name="classTime" type="time" defaultValue="10:00" className={input} required /></label>
+            <fieldset className="w-full">
+              <legend className="text-sm font-semibold">Stacks running in this cohort (a weekly class calendar is created for each)</legend>
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+                {stacks.filter((s) => s.is_active).map((s) => <label key={s.id} className="text-sm"><input type="checkbox" checked={!!newStacks[s.id]} onChange={(e) => setNewStacks({ ...newStacks, [s.id]: e.target.checked })} /> {s.name}</label>)}
+                <button type="button" className="text-sm text-brand-blue underline" onClick={() => setNewStacks(Object.fromEntries(stacks.filter((s) => s.is_active).map((s) => [s.id, true])))}>Select all</button>
+              </div>
+            </fieldset>
             <button className={btn} disabled={busy}>Create cohort</button>
           </form>
           <p className="text-sm text-brand-body mt-3">Next: open <strong>Onboarding</strong> to import learners from the registration sheet and send invitations.</p>

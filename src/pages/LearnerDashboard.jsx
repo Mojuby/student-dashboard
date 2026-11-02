@@ -5,6 +5,8 @@ import { api } from '../api';
 import { useAuth } from '../auth/context';
 import { fmt } from '../lib/format';
 import { Banner } from '../components/ui';
+import LearnerNav from '../components/LearnerNav';
+import FeedbackWidget from '../components/FeedbackWidget';
 
 // A score that has not been recorded is shown as a dash. It is never shown as 0.
 const pct = (v) => (v == null ? '—' : `${v}%`);
@@ -113,7 +115,7 @@ function Grades({ d }) {
 }
 
 export default function LearnerDashboard() {
-  const { logout } = useAuth();
+  const { logout } = useAuth(); // used by the error screen
   const [overview, setOverview] = useState(null);
   const [grades, setGrades] = useState(null);
   const [overviewErr, setOverviewErr] = useState('');
@@ -140,17 +142,15 @@ export default function LearnerDashboard() {
     : gradesErr?.message;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-8">
+    <>
+    <LearnerNav />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 pb-24 md:p-8">
       <div className="max-w-5xl mx-auto">
         <div className={card}>
           <div className="flex flex-wrap justify-between items-center gap-3">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-[#111827] mb-1">FUSE Varsity {overview.cohort.name}</h1>
               <p className="text-gray-600">Welcome back, <span className="font-semibold text-[#0A3DA8]">{overview.learner.name}</span> · {overview.stack}</p>
-            </div>
-            <div className="flex gap-4 text-sm font-medium">
-              <Link to="/assessments" className="text-[#0A3DA8] hover:underline">Weekly assessments</Link>
-              <button onClick={logout} className="text-gray-600 hover:text-[#0A3DA8]">Logout</button>
             </div>
           </div>
         </div>
@@ -199,8 +199,10 @@ export default function LearnerDashboard() {
           </div>
         )}
 
-        <div className="text-center text-sm text-gray-500 pb-6">Need help? Contact your facilitator or the FUSE Varsity team.</div>
+        <div className="text-center text-sm text-gray-500 pb-6">Need help? Contact your facilitator or the FUSE Varsity team, or use the "Report a problem" button.</div>
       </div>
     </div>
+    <FeedbackWidget />
+    </>
   );
 }

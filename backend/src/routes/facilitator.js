@@ -54,32 +54,45 @@ router.get('/learners', wrap(async (req, res) => {
 }));
 
 router.get('/assessments', wrap(async (req, res) => {
-  const { cohortId } = await scopeFor(req, req.query.cohortId);
+  const { cohortId, stackIds } = await scopeFor(req, req.query.cohortId);
+  // Cohort-wide assessments plus any made for the facilitator's own stacks.
   const { rows } = await query(
-    'select id, week_number, title, max_score, opens_at, due_at, is_enabled from assessments where cohort_id = $1 and is_enabled order by week_number', [cohortId]);
-  res.json({ assessments: rows.map((a) => ({ id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), opensAt: a.opens_at, dueAt: a.due_at })) });
+    `select a.id, a.week_number, a.title, a.max_score, a.opens_at, a.due_at, a.kind, s.name as stack from assessments a
+     left join stacks s on s.id = a.stack_id
+     where a.cohort_id = $1 and a.is_enabled and (a.stack_id is null or a.stack_id = any($2::uuid[]))
+     order by a.week_number, s.name nulls first`, [cohortId, stackIds]);
+  res.json({ assessments: rows.map((a) => ({ id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), opensAt: a.opens_at, dueAt: a.due_at, kind: a.kind, stack: a.stack })) });
 }));
 
 router.get('/submissions', wrap(async (req, res) => {
-  const { cohortId } = await scopeFor(req, req.query.cohortId);
+  const { cohortId, stackIds } = await scopeFor(req, req.query.cohortId);
   const assessmentId = uuid(req.query.assessmentId);
   const stackId = req.query.stackId ? uuid(req.query.stackId) : null;
-  const { rows: [a] } = await query('select id, week_number, title, max_score, due_at from assessments where id = $1 and cohort_id = $2', [assessmentId, cohortId]);
+  const { rows: [a] } = await query(
+    'select id, week_number, title, max_score, due_at, kind from assessments where id = $1 and cohort_id = $2 and (stack_id is null or stack_id = any($3::uuid[]))',
+    [assessmentId, cohortId, stackIds]);
   if (!a) throw httpError(404, 'Assessment not found');
   const { rows } = await query(
     `select l.id as learner_id, l.full_name, s.name as stack, sub.id as submission_id, sub.url, sub.submitted_at,
-            g.score, g.feedback, g.published_at, g.graded_at
+            g.score, g.feedback, g.published_at, g.graded_at, (g.graded_at is not null and sub.updated_at > g.graded_at) as resubmitted,
+            qa.score as quiz_score, qa.submitted_at as quiz_at
      from learners l join stacks s on s.id = l.stack_id
-     left join submissions sub on sub.assessment_id = $2 and sub.learner_id = l.id
+     join assessments a on a.id = $2
+     left join submissions sub on sub.assessment_id = a.id and sub.learner_id = l.id and a.kind = 'assignment'
      left join grades g on g.submission_id = sub.id
+     left join quiz_attempts qa on qa.assessment_id = a.id and qa.learner_id = l.id and a.kind = 'quiz'
      where l.cohort_id = $1 and l.status <> 'withdrawn' and ($3::uuid is null or l.stack_id = $3)
+       and (a.stack_id is null or a.stack_id = l.stack_id)
+       and not (a.stack_id is null and exists (select 1 from assessments s2 where s2.cohort_id = a.cohort_id and s2.week_number = a.week_number and s2.stack_id = l.stack_id))
        and ${inAssignment('l').replace('$FAC', '$4')}
      order by s.name, l.full_name`, [cohortId, assessmentId, stackId, req.user.id]);
   res.json({
-    assessment: { id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), dueAt: a.due_at },
+    assessment: { id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), dueAt: a.due_at, kind: a.kind },
     submissions: rows.map((r) => ({
       learnerId: r.learner_id, name: r.full_name, stack: r.stack, submissionId: r.submission_id, url: r.url, submittedAt: r.submitted_at,
       grade: r.score == null ? null : { score: Number(r.score), feedback: r.feedback, published: !!r.published_at, gradedAt: r.graded_at },
+      resubmitted: !!r.resubmitted, // the learner edited after a grade was saved
+      quiz: r.quiz_score == null ? null : { score: Number(r.quiz_score), submittedAt: r.quiz_at }, // auto-graded, read-only
     })),
   });
 }));
@@ -148,10 +161,23 @@ router.post('/assessments/:id/publish', wrap(async (req, res) => {
 router.get('/events', wrap(async (req, res) => {
   const { cohortId, stackIds } = await scopeFor(req, req.query.cohortId);
   const { rows } = await query(
-    `select e.id, e.title, e.description, e.event_type, e.starts_at, e.ends_at, e.link_url, s.name as stack from events e
+    `select e.id, e.title, e.description, e.event_type, e.starts_at, e.ends_at, e.link_url, e.audience, s.name as stack from events e
      left join stacks s on s.id = e.stack_id
      where e.cohort_id = $1 and e.is_active and (e.stack_id is null or e.stack_id = any($2::uuid[])) order by e.starts_at`, [cohortId, stackIds]);
-  res.json({ events: rows.map((e) => ({ id: e.id, title: e.title, description: e.description, eventType: e.event_type, startsAt: e.starts_at, endsAt: e.ends_at, linkUrl: e.link_url, stack: e.stack })) });
+  // Assessment open/due dates for the facilitator's own stacks, shown on the calendar alongside classes.
+  const { rows: asm } = await query(
+    `select a.week_number, a.kind, a.opens_at, a.due_at, s.name as stack from assessments a left join stacks s on s.id = a.stack_id
+     where a.cohort_id = $1 and a.is_enabled and (a.stack_id is null or a.stack_id = any($2::uuid[]))`, [cohortId, stackIds]);
+  const derived = asm.flatMap((a) => {
+    const noun = a.kind === 'quiz' ? 'quiz' : 'assessment';
+    return [
+      { title: `Week ${a.week_number} ${noun} opens`, eventType: 'assessment_open', startsAt: a.opens_at, stack: a.stack },
+      { title: `Week ${a.week_number} ${noun} due`, eventType: 'assessment_deadline', startsAt: a.due_at, stack: a.stack },
+    ];
+  });
+  const real = rows.map((e) => ({ id: e.id, title: e.title, description: e.description, eventType: e.event_type, startsAt: e.starts_at, endsAt: e.ends_at, linkUrl: e.link_url, stack: e.stack, audience: e.audience }));
+  const { rows: [co] } = await query('select timezone from cohorts where id = $1', [cohortId]);
+  res.json({ timezone: co.timezone, events: [...real, ...derived].sort((x, y) => new Date(x.startsAt) - new Date(y.startsAt)) });
 }));
 
 module.exports = router;

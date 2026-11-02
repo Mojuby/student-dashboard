@@ -36,13 +36,16 @@ router.get('/learners-overview', wrap(async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 200));
   const pg = Math.max(1, Number(req.query.page) || 1);
-  const p = await loadProgress({ cohortId: await cohortIdFrom(req), stackId });
+  const cohortId = await cohortIdFrom(req);
+  const p = await loadProgress({ cohortId, stackId });
+  const { rows: qrows } = await query('select id, capstone_qualified from learners where cohort_id = $1', [cohortId]);
+  const qual = new Map(qrows.map((r) => [r.id, r.capstone_qualified]));
   const matched = p.learners.filter((l) => !q || l.name.toLowerCase().includes(q) || l.email.toLowerCase().includes(q));
   res.json({
     cohort: { id: p.cohort.id, number: p.cohort.number },
     total: matched.length, page: pg, pageSize,
     learners: matched.slice((pg - 1) * pageSize, pg * pageSize).map((l) => ({
-      id: l.id, name: l.name, email: l.email, stack: l.stack, cohortNumber: p.cohort.number, group: l.group,
+      id: l.id, name: l.name, email: l.email, stack: l.stack, cohortNumber: p.cohort.number, group: l.group, capstoneQualified: qual.get(l.id) ?? null,
       completionPct: l.completionPct, scorePct: l.scorePct, latestScore: l.latestScore,
       riskStatus: l.risk.status, riskCount: l.risk.reasons.length, potentiallyDisengaged: l.risk.potentiallyDisengaged,
       weekStatuses: l.cells.filter((c) => c.isEnabled).map((c) => ({ week: c.weekNumber, status: c.status })),
@@ -53,7 +56,7 @@ router.get('/learners-overview', wrap(async (req, res) => {
 router.get('/learners/:id', wrap(async (req, res) => {
   const id = uuid(req.params.id);
   const { rows: [l] } = await query(
-    `select l.cohort_id, l.status, l.invited_at, l.activated_at, l.orientation_completed_at, l.withdrawn_at, (l.profile_id is not null) as has_account
+    `select l.cohort_id, l.capstone_qualified, l.status, l.invited_at, l.activated_at, l.orientation_completed_at, l.withdrawn_at, (l.profile_id is not null) as has_account
      from learners l where l.id = $1`, [id]);
   if (!l) throw httpError(404, 'Learner not found');
   const p = await loadProgress({ cohortId: l.cohort_id, learnerId: id });
@@ -62,6 +65,7 @@ router.get('/learners/:id', wrap(async (req, res) => {
   res.json({
     cohort: { number: p.cohort.number, timezone: p.cohort.timezone },
     learner: p.learners[0],
+    capstoneQualified: l.capstone_qualified,
     enrolment: { status: l.status, hasAccount: l.has_account, invitedAt: l.invited_at, activatedAt: l.activated_at, orientationCompletedAt: l.orientation_completed_at, withdrawnAt: l.withdrawn_at, invitation: inv || null },
   });
 }));
@@ -148,7 +152,11 @@ router.get('/assessments', wrap(async (req, res) => {
   const cohortId = await cohortIdFrom(req);
   const tz = await cohortTz(cohortId);
   const { rows } = await query(
-    'select id, week_number, title, max_score, opens_at, due_at, is_enabled from assessments where cohort_id = $1 order by week_number', [cohortId]);
+    `select a.id, a.week_number, a.title, a.max_score, a.opens_at, a.due_at, a.is_enabled, a.stack_id, s.name as stack, a.kind, a.instructions,
+            (select count(*)::int from assessment_files f where f.assessment_id = a.id) as file_count,
+            (select count(*)::int from quiz_questions q where q.assessment_id = a.id) as question_count,
+            ((select count(*) from submissions x where x.assessment_id = a.id) + (select count(*) from quiz_attempts y where y.assessment_id = a.id))::int as work_count
+     from assessments a left join stacks s on s.id = a.stack_id where a.cohort_id = $1 order by a.week_number, s.name nulls first`, [cohortId]);
   const { rows: ext } = await query(
     `select e.id, a.week_number, l.full_name, e.new_due_at, e.reason, e.created_at from deadline_extensions e
      join assessments a on a.id = e.assessment_id join learners l on l.id = e.learner_id
@@ -158,7 +166,8 @@ router.get('/assessments', wrap(async (req, res) => {
     timezone: tz, learners,
     assessments: rows.map((a) => ({
       id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), isEnabled: a.is_enabled,
-      opensAtLocal: toLocalInput(a.opens_at, tz), dueAtLocal: toLocalInput(a.due_at, tz),
+      stackId: a.stack_id, stack: a.stack, kind: a.kind, instructions: a.instructions, fileCount: a.file_count, questionCount: a.question_count, hasWork: a.work_count > 0,
+      opensAtLocal: toLocalInput(a.opens_at, tz), dueAtLocal: toLocalInput(a.due_at, tz), opensAt: a.opens_at, dueAt: a.due_at,
     })),
     extensions: ext,
   });
@@ -217,6 +226,7 @@ const eventSchema = z.object({
   startsAtLocal: z.string(),
   endsAtLocal: z.string().nullable().optional(),
   linkUrl: z.string().max(2048).nullable().optional(),
+  audience: z.enum(['everyone', 'capstone']).default('everyone'),
 });
 
 function eventValues(data, tz) {
@@ -225,14 +235,16 @@ function eventValues(data, tz) {
   const starts = localDate(data.startsAtLocal, tz);
   const ends = data.endsAtLocal ? localDate(data.endsAtLocal, tz) : null;
   if (ends && ends < starts) throw httpError(400, 'The end must be after the start');
-  return [data.title, data.description ?? null, data.eventType, data.stackId ?? null, starts, ends, link];
+  // Capstone events are ALWAYS limited to capstone-qualified learners and facilitators; unqualified learners never see them.
+  const audience = data.eventType === 'capstone_milestone' ? 'capstone' : data.audience;
+  return [data.title, data.description ?? null, data.eventType, data.stackId ?? null, starts, ends, link, audience];
 }
 
 router.get('/events', wrap(async (req, res) => {
   const cohortId = await cohortIdFrom(req);
   const tz = await cohortTz(cohortId);
   const { rows } = await query(
-    `select e.id, e.title, e.description, e.event_type, e.stack_id, s.name as stack, e.starts_at, e.ends_at, e.link_url, e.is_active
+    `select e.id, e.title, e.description, e.event_type, e.stack_id, s.name as stack, e.starts_at, e.ends_at, e.link_url, e.is_active, e.audience, (e.default_key is not null) as is_default
      from events e left join stacks s on s.id = e.stack_id where e.cohort_id = $1 order by e.starts_at`, [cohortId]);
   res.json({ timezone: tz, events: rows.map((e) => ({ ...e, startsAtLocal: toLocalInput(e.starts_at, tz), endsAtLocal: e.ends_at ? toLocalInput(e.ends_at, tz) : '' })) });
 }));
@@ -243,8 +255,8 @@ router.post('/events', wrap(async (req, res) => {
   if (!p.success) throw httpError(400, 'Enter a title, type and start time');
   const vals = eventValues(p.data, await cohortTz(cohortId));
   const { rows: [e] } = await query(
-    `insert into events (cohort_id, title, description, event_type, stack_id, starts_at, ends_at, link_url)
-     values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`, [cohortId, ...vals]);
+    `insert into events (cohort_id, title, description, event_type, stack_id, starts_at, ends_at, link_url, audience)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`, [cohortId, ...vals]);
   await log(req, 'event.create', 'event', e.id, { title: p.data.title });
   res.status(201).json({ id: e.id });
 }));
@@ -258,7 +270,7 @@ router.put('/events/:id', wrap(async (req, res) => {
   const vals = eventValues(p.data, await cohortTz(ev.cohort_id));
   await query(
     `update events set title = $2, description = $3, event_type = $4, stack_id = $5, starts_at = $6, ends_at = $7,
-       link_url = $8, updated_at = now() where id = $1`, [id, ...vals]);
+       link_url = $8, audience = $9, updated_at = now() where id = $1`, [id, ...vals]);
   await log(req, 'event.update', 'event', id, { title: p.data.title });
   res.json({ ok: true });
 }));

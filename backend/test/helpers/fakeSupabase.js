@@ -9,6 +9,7 @@ function makeFakeSupabase() {
   const refresh = new Map();
   const sentResets = [];
   const hooks = { db: null, createDelayMs: 0, failCreateOnce: false };
+  const buckets = new Map(); // storage: bucket -> Map(path -> { buffer, contentType })
 
   const byEmail = (e) => [...users.values()].find((u) => u.email === String(e).toLowerCase());
   const session = (u) => {
@@ -18,7 +19,26 @@ function makeFakeSupabase() {
   };
   const err = (message, code, status = 400) => ({ message, code, status });
 
+  const storage = {
+    getBucket: async (n) => (buckets.has(n) ? { data: { name: n }, error: null } : { data: null, error: { message: 'Bucket not found' } }),
+    createBucket: async (n) => { buckets.set(n, new Map()); return { data: { name: n }, error: null }; },
+    from: (n) => ({
+      upload: async (p, buffer, opts) => {
+        const b = buckets.get(n);
+        if (!b) return { error: { message: 'Bucket not found' } };
+        if (b.has(p)) return { error: { message: 'The resource already exists' } };
+        b.set(p, { buffer, contentType: opts?.contentType });
+        return { data: { path: p }, error: null };
+      },
+      createSignedUrl: async (p, secs, opts) => (buckets.get(n)?.has(p)
+        ? { data: { signedUrl: `https://storage.test/${n}/${p}?token=t&expires=${secs}&download=${encodeURIComponent(opts?.download ?? '')}` }, error: null }
+        : { data: null, error: { message: 'Object not found' } }),
+      remove: async (paths) => { for (const p of paths) buckets.get(n)?.delete(p); return { error: null }; },
+    }),
+  };
+
   const admin = {
+    storage,
     auth: {
       getUser: async (token) => {
         const u = users.get(sessions.get(token));
@@ -68,7 +88,7 @@ function makeFakeSupabase() {
 
   return {
     module: { admin, anon },
-    hooks, users, sentResets,
+    hooks, users, sentResets, buckets,
     // A user that exists only in Auth (e.g. left behind by an interrupted activation).
     async addAuthOnly(email, password) {
       const { data } = await admin.auth.admin.createUser({ email, password });
@@ -76,7 +96,7 @@ function makeFakeSupabase() {
     },
     async addUser(email, password) { return this.addAuthOnly(email, password); },
     recoveryToken(email) { return session(byEmail(email)).access_token; },
-    reset() { users.clear(); sessions.clear(); refresh.clear(); sentResets.length = 0; hooks.createDelayMs = 0; hooks.failCreateOnce = false; },
+    reset() { users.clear(); buckets.clear(); sessions.clear(); refresh.clear(); sentResets.length = 0; hooks.createDelayMs = 0; hooks.failCreateOnce = false; },
   };
 }
 

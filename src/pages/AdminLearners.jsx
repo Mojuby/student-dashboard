@@ -12,6 +12,23 @@ export default function AdminLearners() {
   const [risk, setRisk] = useState('');
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
+  const reload = () => api(`/admin/learners-overview?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message));
+  const qualLabel = (v) => (v === true ? <span className="font-semibold text-green-800">Qualified</span> : v === false ? <span className="text-slate-600">Not qualified</span> : <span className="text-amber-800">Not confirmed</span>);
+  async function setQualified(value) {
+    setErr(''); setNote('');
+    try {
+      await api(`/admin/learners/${detail.learner.id}/capstone`, { method: 'PATCH', body: { qualified: value } });
+      setDetail({ ...detail, capstoneQualified: value }); await reload();
+    } catch (e) { setErr(e.message); }
+  }
+  async function syncSheet() {
+    setErr(''); setNote('');
+    try {
+      const r = await api(`/admin/cohorts/${cohortId}/capstone-qualification/sync`, { method: 'POST' });
+      setNote(`Capstone qualification updated from the sheet: ${r.qualified} qualified, ${r.notQualified} not qualified, ${r.unknown} not yet confirmed.`); await reload();
+    } catch (e) { setErr(e.message); }
+  }
 
   useEffect(() => { if (cohortId) api(`/admin/learners-overview?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message)); }, [cohortId]);
   const stacks = useMemo(() => [...new Set((data?.learners || []).map((l) => l.stack))].sort(), [data]);
@@ -28,9 +45,10 @@ export default function AdminLearners() {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
       <h1 className="font-heading text-3xl font-extrabold text-brand-navy">Learners</h1>
-      <Banner error={error || err} />
+      <Banner error={error || err} message={note} />
       <div className="flex flex-wrap gap-2">
         <CohortPicker cohorts={cohorts} value={cohortId} onChange={setCohortId} />
+        <button onClick={syncSheet} className="rounded-lg border border-brand-line bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50">Sync capstone qualification from the sheet</button>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" className="px-3 py-2 border border-brand-line rounded-lg" />
         <select value={stack} onChange={(e) => setStack(e.target.value)} className="px-3 py-2 border border-brand-line rounded-lg"><option value="">All stacks</option>{stacks.map((s) => <option key={s}>{s}</option>)}</select>
         <select value={risk} onChange={(e) => setRisk(e.target.value)} className="px-3 py-2 border border-brand-line rounded-lg">
@@ -43,7 +61,7 @@ export default function AdminLearners() {
           <h2 className="font-heading text-lg font-bold text-brand-navy mb-2">{name} <span className="text-sm text-brand-body font-normal">({list.length})</span></h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-brand-body"><th className="py-1">Name</th><th>Email</th><th>Assessments</th><th>Latest score</th><th>Progress</th><th>Status</th></tr></thead>
+              <thead><tr className="text-left text-brand-body"><th className="py-1">Name</th><th>Email</th><th>Assessments</th><th>Latest score</th><th>Progress</th><th>Capstone</th><th>Status</th></tr></thead>
               <tbody>
                 {list.map((l) => (
                   <tr key={l.id} onClick={() => open(l.id)} className="border-t border-brand-border cursor-pointer hover:bg-slate-50">
@@ -52,6 +70,7 @@ export default function AdminLearners() {
                     <td><div className="flex gap-1">{l.weekStatuses.map((w) => <StatusBadge key={w.week} status={w.status} />).slice(0, 5)}</div></td>
                     <td>{l.latestScore ? `W${l.latestScore.week}: ${l.latestScore.score}/${l.latestScore.max}` : '—'}</td>
                     <td>{l.completionPct}%</td>
+                    <td>{qualLabel(l.capstoneQualified)}</td>
                     <td>{l.riskStatus === 'at_risk' ? <strong className="text-amber-800">At risk ({l.riskCount})</strong> : 'On track'}{l.potentiallyDisengaged ? ' · Possibly disengaged' : ''}</td>
                   </tr>
                 ))}
@@ -63,7 +82,7 @@ export default function AdminLearners() {
       {data && grouped.length === 0 && <p className="text-brand-body">No learners match.</p>}
 
       {detail && (
-        <div className="fixed inset-y-0 right-0 w-full md:w-[34rem] bg-white shadow-2xl border-l border-brand-border p-5 overflow-y-auto z-20">
+        <div className="fixed inset-y-0 right-0 w-full md:w-[34rem] bg-white shadow-2xl border-l border-brand-border p-5 overflow-y-auto z-50">
           <button onClick={() => setDetail(null)} className="float-right text-brand-body hover:text-brand-blue">Close ✕</button>
           <h2 className="font-heading text-2xl font-bold text-brand-navy">{detail.learner.name}</h2>
           <p className="text-sm text-brand-body">{detail.learner.email} · {detail.learner.stack} · Cohort {detail.cohort.number}</p>
@@ -74,6 +93,12 @@ export default function AdminLearners() {
               {detail.enrolment.invitation && <p className="text-brand-body">Invitation email: {detail.enrolment.invitation.delivery_status}{detail.enrolment.invitation.delivery_error ? ` (${detail.enrolment.invitation.delivery_error})` : ''}</p>}
             </div>
           )}
+          <label className="text-sm mt-1 block">Capstone qualification:{' '}
+            <select value={detail.capstoneQualified === true ? 'yes' : detail.capstoneQualified === false ? 'no' : 'unknown'} onChange={(e) => setQualified(e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null)} className="ml-1 rounded-lg border border-brand-line bg-white px-2 py-1">
+              <option value="unknown">Not confirmed</option><option value="yes">Qualified</option><option value="no">Not qualified</option>
+            </select>
+            <span className="block text-xs text-brand-body">Only qualified learners see capstone events.</span>
+          </label>
           <p className="text-sm mt-1">Capstone group: {detail.learner.group ? detail.learner.group.name : 'Not assigned'}</p>
           <p className="text-sm">Completion {detail.learner.completionPct}% · Score {detail.learner.scorePct ?? '—'}%</p>
 

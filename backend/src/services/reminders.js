@@ -4,6 +4,7 @@ const { query } = require('../db');
 const { loadProgress } = require('./progress');
 const { sendEmail } = require('./mailer');
 const { reminderSlot } = require('../lib/reminderSchedule');
+const { cohortWeek, selectReminderTargets, isConsolidatedWeek } = require('../lib/reminderTargets');
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -23,47 +24,52 @@ async function runReminders({ now = new Date(), onlyCohortId = null, preview = f
     if (!slotInfo) { out.push({ cohort: c.number, skipped: 'Not a reminder window' }); continue; }
 
     const { learners } = await loadProgress({ cohortId: c.id, now });
-    const targets = [];
-    for (const l of learners) {
-      for (const cell of l.cells) {
-        // Only opened, enabled, unsubmitted assessments whose (extended) deadline hasn't passed.
-        if (cell.isEnabled && !cell.submitted && new Date(cell.opensAt) <= now && new Date(cell.dueAt) > now) targets.push({ l, cell });
-      }
-    }
-    const result = { cohort: c.number, slot: slotInfo.slot, recipients: targets.length, processed: 0, failed: 0, dryRun: config.mail.dryRun };
+    const weekNumber = slotInfo.weekNumber ?? cohortWeek(now, c.timezone, c.week1);
+    const consolidated = isConsolidatedWeek(weekNumber);
+    const groups = selectReminderTargets({ learners, now });
+    // Weeks 1-5: one email per outstanding assessment. Week 6+: one email per learner covering everything outstanding.
+    const sends = consolidated ? groups.map((g) => ({ l: g.learner, cells: g.cells })) : groups.flatMap((g) => g.cells.map((cell) => ({ l: g.learner, cells: [cell] })));
+    const result = { cohort: c.number, slot: slotInfo.slot, week: weekNumber, consolidated, recipients: sends.length, processed: 0, failed: 0, dryRun: config.mail.dryRun };
     if (preview) {
-      result.sample = targets.slice(0, 200).map(({ l, cell }) => ({ name: l.name, email: l.email, week: cell.weekNumber }));
+      result.sample = sends.slice(0, 200).map(({ l, cells }) => ({ name: l.name, email: l.email, week: cells.map((x) => x.weekNumber).join(', ') }));
       out.push(result);
       continue;
     }
 
-    for (const { l, cell } of targets) {
-      // Claim the (assessment, learner, day) slot. Only a previously FAILED row (under 3 attempts) can be re-claimed.
-      const { rows: [claim] } = await query(
-        `insert into reminder_log (assessment_id, learner_id, slot, status) values ($1,$2,$3,'pending')
-         on conflict (assessment_id, learner_id, slot) do update
-           set status = 'pending', attempts = reminder_log.attempts + 1, updated_at = now()
-           where reminder_log.status = 'failed' and reminder_log.attempts < 3
-         returning id`,
-        [cell.assessmentId, l.id, slotInfo.slot]
-      );
-      if (!claim) continue;
+    for (const { l, cells } of sends) {
+      // Claim each (assessment, learner, day) slot. Only a previously FAILED row (under 3 attempts) can be re-claimed.
+      const claimed = [];
+      for (const cell of cells) {
+        const { rows: [claim] } = await query(
+          `insert into reminder_log (assessment_id, learner_id, slot, status) values ($1,$2,$3,'pending')
+           on conflict (assessment_id, learner_id, slot) do update
+             set status = 'pending', attempts = reminder_log.attempts + 1, updated_at = now()
+             where reminder_log.status = 'failed' and reminder_log.attempts < 3
+           returning id`,
+          [cell.assessmentId, l.id, slotInfo.slot]
+        );
+        if (claim) claimed.push({ cell, id: claim.id });
+      }
+      if (!claimed.length) continue;
       try {
-        const due = DateTime.fromJSDate(new Date(cell.dueAt), { zone: c.timezone }).toFormat("cccc d LLLL 'at' h:mm a");
         const link = `${config.app.url.replace(/\/$/, '')}/assessments`;
+        const dueOf = (cell) => DateTime.fromJSDate(new Date(cell.dueAt), { zone: c.timezone }).toFormat("cccc d LLLL 'at' h:mm a");
+        const first = esc(l.name.split(' ')[0]);
+        const items = claimed.map(({ cell }) => `<li>Week ${cell.weekNumber}${cell.title ? ` (${esc(cell.title)})` : ''}: due <strong>${esc(dueOf(cell))}</strong></li>`).join('');
         const r = await sendEmail({
           to: l.email,
-          subject: `Week ${cell.weekNumber} assessment reminder`,
-          html: `<p>Hi ${esc(l.name.split(' ')[0])},</p>
-                 <p>A quick reminder: your Week ${cell.weekNumber} assessment is due on <strong>${esc(due)}</strong>.</p>
-                 <p><a href="${esc(link)}">Submit your Google Docs or Drive link here</a></p>
+          subject: claimed.length > 1 || consolidated ? 'You still have unsubmitted assessments' : `Week ${claimed[0].cell.weekNumber} assessment reminder`,
+          html: `<p>Hi ${first},</p>
+                 <p>A quick reminder: ${claimed.length > 1 ? 'these assessments have' : 'this assessment has'} not been submitted yet.</p>
+                 <ul>${items}</ul>
+                 <p><a href="${esc(link)}">Open your assessments</a></p>
                  <p>FUSE Varsity</p>`,
         });
-        await query('update reminder_log set status = $2, updated_at = now() where id = $1', [claim.id, r.status]);
+        for (const { id } of claimed) await query('update reminder_log set status = $2, updated_at = now() where id = $1', [id, r.status]);
         result.processed++;
         if (r.status === 'sent') await sleep(600); // stay under provider rate limits
       } catch (e) {
-        await query(`update reminder_log set status = 'failed', error = $2, updated_at = now() where id = $1`, [claim.id, String(e.message).slice(0, 200)]);
+        for (const { id } of claimed) await query(`update reminder_log set status = 'failed', error = $2, updated_at = now() where id = $1`, [id, String(e.message).slice(0, 200)]);
         result.failed++;
       }
     }

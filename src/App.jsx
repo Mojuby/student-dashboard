@@ -7,6 +7,7 @@ import ResetPassword from './pages/ResetPassword';
 import ChangePassword from './pages/ChangePassword';
 import LearnerDashboard from './pages/LearnerDashboard';
 import LearnerAssessments from './pages/LearnerAssessments';
+import LearnerSchedule from './pages/LearnerSchedule';
 import FacilitatorHome from './pages/FacilitatorHome';
 import AdminLayout from './pages/AdminLayout';
 import AdminHome from './pages/AdminHome';
@@ -17,6 +18,8 @@ import AdminGroups from './pages/AdminGroups';
 import AdminSchedule from './pages/AdminSchedule';
 import AdminAnalytics from './pages/AdminAnalytics';
 import AdminActivity from './pages/AdminActivity';
+import AdminAssessments from './pages/AdminAssessments';
+import AdminFeedback from './pages/AdminFeedback';
 
 export default function App() {
   return (
@@ -34,6 +37,7 @@ export default function App() {
       {/* learner */}
       <Route path="/" element={<RequireRole role="learner" loginPath="/login"><LearnerDashboard /></RequireRole>} />
       <Route path="/assessments" element={<RequireRole role="learner" loginPath="/login"><LearnerAssessments /></RequireRole>} />
+      <Route path="/schedule" element={<RequireRole role="learner" loginPath="/login"><LearnerSchedule /></RequireRole>} />
 
       {/* facilitator */}
       <Route path="/facilitator" element={<RequireRole role="facilitator" loginPath="/facilitator/login"><FacilitatorHome /></RequireRole>} />
@@ -44,6 +48,8 @@ export default function App() {
         <Route path="onboarding" element={<AdminOnboarding />} />
         <Route path="learners" element={<AdminLearners />} />
         <Route path="facilitators" element={<AdminFacilitators />} />
+        <Route path="assessments" element={<AdminAssessments />} />
+        <Route path="feedback" element={<AdminFeedback />} />
         <Route path="groups" element={<AdminGroups />} />
         <Route path="schedule" element={<AdminSchedule />} />
         <Route path="analytics" element={<AdminAnalytics />} />

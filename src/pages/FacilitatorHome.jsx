@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useAuth } from '../auth/context';
 import { fmt } from '../lib/format';
 import { Banner, Card, StatusBadge } from '../components/ui';
+import ScheduleView from '../components/ScheduleView';
 
 const sel = 'px-3 py-2 border border-brand-line rounded-lg bg-white';
 const btn = 'bg-brand-blue text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-brand-navy disabled:opacity-50';
@@ -128,21 +129,14 @@ function Grading({ cohortId }) {
 }
 
 function Schedule({ cohortId }) {
-  const [events, setEvents] = useState(null);
+  const [data, setData] = useState(null);
   const [err, setErr] = useState('');
-  useEffect(() => { api(`/facilitator/events?cohortId=${cohortId}`).then((r) => setEvents(r.events)).catch((e) => setErr(e.message)); }, [cohortId]);
+  useEffect(() => { api(`/facilitator/events?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message)); }, [cohortId]);
   return (
     <Card>
       <Banner error={err} />
-      {events && events.length === 0 && <p className="text-sm text-brand-body">No classes or events scheduled yet.</p>}
-      <ul className="text-sm space-y-2">
-        {events?.map((e) => (
-          <li key={e.id} className="flex flex-wrap justify-between gap-2 border-b border-brand-border pb-2">
-            <span><strong>{e.title}</strong>{e.stack ? ` · ${e.stack}` : ''}{e.linkUrl && <> · <a className="text-brand-blue underline" href={e.linkUrl} target="_blank" rel="noreferrer">Class link</a></>}</span>
-            <span className="text-brand-body">{fmt(e.startsAt)}</span>
-          </li>
-        ))}
-      </ul>
+      {!data && !err && <p className="text-sm text-brand-body">Loading the schedule…</p>}
+      {data && <ScheduleView events={data.events} timezone={data.timezone} emptyText="No classes or events scheduled yet." />}
     </Card>
   );
 }

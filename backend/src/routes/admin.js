@@ -10,6 +10,7 @@ const { issueInvitation, sendInvitations } = require('../services/invitations');
 const { onboardingOverview } = require('../services/onboarding');
 const { mailMode } = require('../services/mailer');
 const config = require('../config');
+const { applyDefaultCalendar, TIME_RE } = require('../services/calendar');
 
 const log = (req, action, entityType, entityId, details) =>
   audit({ actorId: req.user.id, action, entityType, entityId, details, ip: req.ip });
@@ -32,12 +33,16 @@ const cohortSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   week1ClassDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone: z.string().default('Africa/Lagos'),
+  // Stacks running in this cohort. A default calendar (weekly classes per stack) is created for each one and stays editable.
+  stackIds: z.array(z.string().uuid()).max(30).default([]),
+  classTime: z.string().regex(TIME_RE).default('10:00'),
+  classDurationMinutes: z.number().int().min(15).max(480).default(120),
 });
 
 router.post('/cohorts', wrap(async (req, res) => {
   const p = cohortSchema.safeParse(req.body);
   if (!p.success) throw httpError(400, 'Enter a cohort number and a week 1 class date');
-  const { number, week1ClassDate, timezone } = p.data;
+  const { number, week1ClassDate, timezone, stackIds, classTime, classDurationMinutes } = p.data;
   let schedule;
   try { schedule = buildAssessmentSchedule({ week1ClassDate, timezone }); } catch (e) { throw httpError(400, e.message); }
 
@@ -52,8 +57,9 @@ router.post('/cohorts', wrap(async (req, res) => {
         [co.id, a.weekNumber, a.title, a.maxScore, a.opensAt, a.dueAt]
       );
     }
-    await audit({ db: c, actorId: req.user.id, action: 'cohort.create', entityType: 'cohort', entityId: co.id, details: { number, week1ClassDate, timezone }, ip: req.ip });
-    return co;
+    const calendar = await applyDefaultCalendar(c, { cohortId: co.id, stackIds, classTime, durationMinutes: classDurationMinutes });
+    await audit({ db: c, actorId: req.user.id, action: 'cohort.create', entityType: 'cohort', entityId: co.id, details: { number, week1ClassDate, timezone, stacks: stackIds.length, calendarEvents: calendar.created }, ip: req.ip });
+    return { ...co, calendar };
   });
   res.status(201).json({ cohort });
 }));
@@ -81,6 +87,24 @@ router.post('/cohorts/:id/status', wrap(async (req, res) => {
   const p = z.object({ status: z.enum(STATUSES) }).safeParse(req.body);
   if (!p.success) throw httpError(400, `Status must be one of: ${STATUSES.join(', ')}`);
   res.json({ ok: true, ...(await setCohortStatus(req, id, p.data.status)) });
+}));
+
+// Creates the default weekly class calendar for the chosen stacks. Safe to repeat: events that already exist (even if an
+// admin edited them) are left alone and nothing is duplicated.
+router.post('/cohorts/:id/default-calendar', wrap(async (req, res) => {
+  const id = uuid(req.params.id);
+  const p = z.object({
+    stackIds: z.array(z.string().uuid()).min(1).max(30),
+    classTime: z.string().regex(TIME_RE).default('10:00'),
+    classDurationMinutes: z.number().int().min(15).max(480).default(120),
+  }).safeParse(req.body);
+  if (!p.success) throw httpError(400, 'Choose at least one stack and a start time like 10:00');
+  const { rows: [c] } = await query('select status from cohorts where id = $1', [id]);
+  if (!c) throw httpError(404, 'Cohort not found');
+  if (c.status === 'archived') throw httpError(409, 'Archived cohorts cannot be changed.');
+  const out = await tx((client) => applyDefaultCalendar(client, { cohortId: id, stackIds: p.data.stackIds, classTime: p.data.classTime, durationMinutes: p.data.classDurationMinutes }));
+  await log(req, 'cohort.default_calendar', 'cohort', id, { stacks: p.data.stackIds.length, ...out });
+  res.json({ ok: true, ...out });
 }));
 
 // Kept for older clients. It no longer deactivates other cohorts.
@@ -236,7 +260,8 @@ router.post('/facilitator-invites', wrap(async (req, res) => {
   const { email, fullName, cohortId, stackId } = p.data;
   const ok = await query('select 1 from stacks s, cohorts c where s.id = $1 and s.is_active and c.id = $2', [stackId, cohortId]);
   if (!ok.rowCount) throw httpError(400, 'Choose an active stack and an existing cohort');
-  if ((await query('select 1 from profiles where email = $1', [email])).rowCount) throw httpError(409, 'That email already has an account');
+  const { rows: [existing] } = await query('select role, is_active from profiles where email = $1', [email]);
+  if (existing) throw httpError(409, existing.role === 'facilitator' && !existing.is_active ? 'This facilitator was removed earlier. Restore them from the Facilitators list instead.' : 'That email already has an account');
   const code = await createInvite({ query }, { role: 'facilitator', email, fullName, cohortId, stackId, days: 14, createdBy: req.user.id });
   await log(req, 'invite.facilitator', 'invite', null, { email, cohortId, stackId });
   res.status(201).json({ code });
@@ -254,6 +279,38 @@ router.get('/facilitators', wrap(async (req, res) => {
     query(`select email::text as email, full_name, expires_at from invites where role = 'facilitator' and used_at is null order by created_at desc`),
   ]);
   res.json({ facilitators: people.rows, pendingInvites: pending.rows });
+}));
+
+// "Delete" a facilitator who has no stack in the chosen cohort. Their account is DEACTIVATED, not erased: grades they gave
+// and the activity log keep pointing at a real person. Blocked while they still teach any other open cohort.
+router.delete('/facilitators/:id', wrap(async (req, res) => {
+  const id = uuid(req.params.id);
+  const cohortId = uuid(req.query.cohortId);
+  const out = await tx(async (c) => {
+    const { rows: [f] } = await c.query(`select id, full_name, email::text as email, is_active from profiles where id = $1 and role = 'facilitator' for update`, [id]);
+    if (!f) throw httpError(404, 'Facilitator not found');
+    if (!f.is_active) throw httpError(409, 'This facilitator was already removed.');
+    if ((await c.query('select 1 from facilitator_assignments where facilitator_id = $1 and cohort_id = $2', [id, cohortId])).rowCount) {
+      throw httpError(409, 'This facilitator is assigned to a stack in this cohort. Remove those assignments first.');
+    }
+    const { rows: other } = await c.query(
+      `select distinct co.number from facilitator_assignments fa join cohorts co on co.id = fa.cohort_id
+       where fa.facilitator_id = $1 and co.status <> 'archived' order by co.number`, [id]);
+    if (other.length) throw httpError(409, `They are still assigned in Cohort ${other.map((o) => o.number).join(', ')}. Remove those assignments first.`);
+    await c.query('update profiles set is_active = false where id = $1', [id]);
+    await c.query(`delete from invites where role = 'facilitator' and email = $1 and used_at is null`, [f.email]);
+    await audit({ db: c, actorId: req.user.id, action: 'facilitator.remove', entityType: 'profile', entityId: id, details: { cohortId, name: f.full_name }, ip: req.ip });
+    return { name: f.full_name };
+  });
+  res.json({ ok: true, ...out });
+}));
+
+router.post('/facilitators/:id/restore', wrap(async (req, res) => {
+  const id = uuid(req.params.id);
+  const r = await query(`update profiles set is_active = true where id = $1 and role = 'facilitator' and not is_active`, [id]);
+  if (!r.rowCount) throw httpError(404, 'No removed facilitator with that id');
+  await log(req, 'facilitator.restore', 'profile', id, {});
+  res.json({ ok: true });
 }));
 
 router.post('/facilitators/:id/assignments', wrap(async (req, res) => {

@@ -20,7 +20,11 @@ app.disable('x-powered-by');
 
 app.use(requestContext);
 app.use(helmet());
-app.use(express.json({ limit: '100kb' }));
+// Small JSON bodies everywhere, except the one admin route that receives a base64-encoded assessment file; that route
+// parses its own (larger) body AFTER authentication (see routes/adminContent.js).
+const smallJson = express.json({ limit: '100kb' });
+const fileUploadPath = /^\/api\/admin\/assessments\/[0-9a-f-]{36}\/files$/i;
+app.use((req, res, next) => (req.method === 'POST' && fileUploadPath.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(cookieParser());
 
 // CSRF defence for cookie-based sessions.
@@ -167,7 +171,8 @@ app.use(
   '/api/admin',
   ...guard('admin'),
   require('./routes/admin'),
-  require('./routes/adminOps')
+  require('./routes/adminOps'),
+  require('./routes/adminContent')
 );
 
 app.use(

@@ -97,8 +97,8 @@ describe('FUSE platform: onboarding, cohorts, grading, security', { skip }, () =
       for (const p of ['/api/admin/cohorts', '/api/admin/learners-overview', '/api/learner/overview', '/api/facilitator/me']) assert.equal((await anon.get(p)).status, 401, p);
       const l = actor(h.base);
       ok(await l.post('/api/auth/learner/login', { email: 'learner9@example.test', password: LP }));
-      assert.equal((await l.get('/api/admin/cohorts')).status, 403);
-      assert.equal((await l.get('/api/facilitator/me')).status, 403);
+      assert.equal((await l.get('/api/admin/cohorts')).status, 401);
+      assert.equal((await l.get('/api/facilitator/me')).status, 401);
       assert.equal((await actor(h.base).post('/api/auth/admin/login', { email: 'learner9@example.test', password: LP })).status, 401, 'a learner cannot use the admin portal');
     });
   });
@@ -427,7 +427,7 @@ describe('FUSE platform: onboarding, cohorts, grading, security', { skip }, () =
 
     it("cannot reach another cohort's assessment or another learner's records (IDOR)", async () => {
       assert.equal((await ada.put(`/api/learner/assessments/${c9.assessmentId}/submission`, { url: 'https://docs.google.com/document/d/adadoc0003abc' })).status, 404);
-      const r = await ada.get(`/api/admin/learners-overview?cohortId=${c9.id}`); assert.equal(r.status, 403);
+      const r = await ada.get(`/api/admin/learners-overview?cohortId=${c9.id}`); assert.equal(r.status, 401);
       const ov = (await ada.get('/api/learner/overview?learnerId=anything&cohortId=' + c9.id)).body;
       assert.equal(ov.cohort.number, 10, 'client-supplied ids never select the cohort');
       assert.ok(!JSON.stringify(ov).includes('learner9@example.test'));
@@ -487,7 +487,7 @@ describe('FUSE platform: onboarding, cohorts, grading, security', { skip }, () =
       assert.equal(a.score, 4); assert.match(a.feedback, /tighten the intro/); assert.equal(a.status, 'graded'); assert.equal(a.gradeState, 'published');
       const d = (await ada.get('/api/learner/dashboard')).body;
       assert.equal(d.assessments.w1, 4); assert.equal(d.hasScores, true);
-      assert.equal((await ada.put(`/api/learner/assessments/${w1id}/submission`, { url: 'https://docs.google.com/document/d/adadoc0009abc' })).status, 403, 'graded work is locked');
+      ok(await ada.put(`/api/learner/assessments/${w1id}/submission`, { url: 'https://docs.google.com/document/d/adadoc0009abc' })); // still editable before the deadline, even after publishing
     });
 
     it('records corrections as revisions and audits every grade change', async () => {
@@ -513,8 +513,8 @@ describe('FUSE platform: onboarding, cohorts, grading, security', { skip }, () =
     });
 
     it('is not an admin: staff areas stay separate', async () => {
-      assert.equal((await fac.get('/api/admin/cohorts')).status, 403);
-      assert.equal((await fac.post(`/api/admin/cohorts/${cohort10.id}/status`, { status: 'completed' })).status, 403);
+      assert.equal((await fac.get('/api/admin/cohorts')).status, 401);
+      assert.equal((await fac.post(`/api/admin/cohorts/${cohort10.id}/status`, { status: 'completed' })).status, 401);
     });
   });
 

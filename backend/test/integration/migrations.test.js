@@ -51,7 +51,7 @@ test('migration 003 upgrades legacy data without altering it, and is repeatable'
     const before = await snap();
     assert.ok(before.cohorts.length === 3 && before.learners.length === 2 && before.grades.length === 1, 'snapshot must not be empty');
 
-    assert.deepEqual(await runMigrations(c, { log: () => {} }), ['003_multi_cohort_onboarding.sql']);
+    assert.deepEqual(await runMigrations(c, { log: () => {} }), ['003_multi_cohort_onboarding.sql', '004_feedback_calendar_assessments.sql']);
     assert.deepEqual(await snap(), before, 'legacy columns must be identical after the upgrade');
 
     const st = Object.fromEntries((await c.query('select number,status,is_active from cohorts')).rows.map((r) => [r.number, r]));
@@ -62,6 +62,16 @@ test('migration 003 upgrades legacy data without altering it, and is repeatable'
     assert.equal(ls['p@t.test'].status, 'enrolled');
     assert.ok((await c.query('select published_at from grades')).rows[0].published_at, 'existing grades stay visible to learners');
 
+    // 004: existing assessments stay cohort-wide assignments; stacks in use are recorded; nothing existing changes visibility.
+    const a = (await c.query('select stack_id, kind, instructions from assessments')).rows[0];
+    assert.equal(a.stack_id, null); assert.equal(a.kind, 'assignment'); assert.equal(a.instructions, null);
+    assert.ok((await c.query(`select 1 from cohort_stacks cs join cohorts co on co.id = cs.cohort_id where co.number = 9`)).rowCount >= 1, 'cohort 9 stack recorded');
+    assert.equal((await c.query(`select count(*)::int n from learners where capstone_qualified is not null`)).rows[0].n, 0, 'qualification starts unknown');
+    // the old one-assessment-per-week rule is gone, but a stack still cannot have two for the same week
+    const ids = (await c.query(`select (select id from cohorts where number = 9) c9, (select id from stacks limit 1) s`)).rows[0];
+    await c.query(`insert into assessments (cohort_id, week_number, title, max_score, opens_at, due_at, stack_id) values ($1, 1, 'PM only', 5, now(), now() + interval '1 day', $2)`, [ids.c9, ids.s]);
+    await assert.rejects(c.query(`insert into assessments (cohort_id, week_number, title, max_score, opens_at, due_at, stack_id) values ($1, 1, 'dup', 5, now(), now() + interval '1 day', $2)`, [ids.c9, ids.s]), /duplicate key/);
+    await assert.rejects(c.query(`insert into assessments (cohort_id, week_number, title, max_score, opens_at, due_at) values ($1, 1, 'dup2', 5, now(), now() + interval '1 day')`, [ids.c9]), /duplicate key/, 'cohort-wide week still unique');
     assert.deepEqual(await runMigrations(c, { log: () => {} }), [], 'second run applies nothing');
   } finally { await c.end(); }
 });

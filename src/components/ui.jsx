@@ -1,7 +1,7 @@
 export function AuthCard({ title, subtitle, children }) {
   return (
-    <div className="min-h-screen bg-brand-bg flex items-center justify-center p-4 font-body">
-      <div className="bg-white rounded-2xl border border-brand-border shadow-sm p-8 w-full max-w-md">
+    <div className="min-h-screen bg-brand-bg flex items-center justify-center p-3 sm:p-4 font-body">
+      <div className="bg-white rounded-2xl border border-brand-border shadow-sm p-5 sm:p-8 w-full max-w-md">
         <h1 className="font-heading text-2xl font-bold text-brand-navy mb-1">{title}</h1>
         <p className="text-brand-body mb-6">{subtitle}</p>
         {children}
@@ -37,7 +37,7 @@ export function Banner({ error, message }) {
 }
 
 export function Card({ children, className = '' }) {
-  return <section className={`bg-white rounded-2xl border border-brand-border p-5 ${className}`}>{children}</section>;
+  return <section className={`bg-white rounded-2xl border border-brand-border p-4 sm:p-5 ${className}`}>{children}</section>;
 }
 
 const BADGES = {

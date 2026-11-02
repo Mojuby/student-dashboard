@@ -12,8 +12,8 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
      from cohorts where id = $1`, [cohortId]);
   if (!cohort) return null;
 
-  const [asm, lrn, sub, ext, flg] = await Promise.all([
-    query('select id, week_number, title, max_score, opens_at, due_at, is_enabled from assessments where cohort_id = $1 order by week_number', [cohortId]),
+  const [asm, lrn, sub, ext, flg, qz] = await Promise.all([
+    query('select id, week_number, title, max_score, opens_at, due_at, is_enabled, stack_id, kind from assessments where cohort_id = $1 order by week_number, stack_id nulls first', [cohortId]),
     query(
       `select l.id, l.profile_id, l.full_name, l.email, l.stack_id, s.name as stack, g.id as group_id, g.name as group_name
        from learners l
@@ -38,20 +38,33 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
       `select f.id, f.learner_id, f.kind, f.reason, f.created_at, p.full_name as by_name
        from learner_flags f join profiles p on p.id = f.created_by join learners l on l.id = f.learner_id
        where l.cohort_id = $1 and f.resolved_at is null order by f.created_at desc`, [cohortId]),
+    query(
+      `select qa.assessment_id, qa.learner_id, qa.score, qa.submitted_at from quiz_attempts qa
+       join assessments a on a.id = qa.assessment_id where a.cohort_id = $1`, [cohortId]),
   ]);
 
   const assessments = asm.rows.map((a) => ({
     id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score),
-    opensAt: a.opens_at, dueAt: a.due_at, isEnabled: a.is_enabled,
+    opensAt: a.opens_at, dueAt: a.due_at, isEnabled: a.is_enabled, stackId: a.stack_id, kind: a.kind,
   }));
+
+  // A learner has at most ONE assessment per week: their own stack's if one exists, otherwise the cohort-wide one.
+  const byWeek = new Map();
+  for (const a of assessments) byWeek.set(a.weekNumber, [...(byWeek.get(a.weekNumber) || []), a]);
+  const applicableTo = (stackId) => [...byWeek.keys()].sort((x, y) => x - y)
+    .map((w) => byWeek.get(w).find((a) => a.stackId === stackId) || byWeek.get(w).find((a) => !a.stackId)).filter(Boolean);
+  // A quiz attempt is auto-graded and counts as submitted + graded + published at the moment it is handed in.
+  const quizMap = new Map(qz.rows.map((r) => [`${r.assessment_id}:${r.learner_id}`, {
+    id: null, url: null, submitted_at: r.submitted_at, updated_at: r.submitted_at, score: r.score, feedback: null, graded_at: r.submitted_at, published_at: r.submitted_at,
+  }]));
   const subMap = new Map(sub.rows.map((s) => [`${s.assessment_id}:${s.learner_id}`, s]));
   const extMap = new Map(ext.rows.map((e) => [`${e.assessment_id}:${e.learner_id}`, e.due]));
   const flagMap = new Map();
   for (const f of flg.rows) flagMap.set(f.learner_id, [...(flagMap.get(f.learner_id) || []), f]);
 
   const learners = lrn.rows.map((l) => {
-    const cells = assessments.map((a) => {
-      const s = subMap.get(`${a.id}:${l.id}`);
+    const cells = applicableTo(l.stack_id).map((a) => {
+      const s = a.kind === 'quiz' ? quizMap.get(`${a.id}:${l.id}`) : subMap.get(`${a.id}:${l.id}`);
       const dueAt = effectiveDue(a.dueAt, extMap.get(`${a.id}:${l.id}`));
       const hasGrade = !!s && s.score != null;
       const published = hasGrade && s.published_at != null;
@@ -59,7 +72,10 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
       return {
         assessmentId: a.id, weekNumber: a.weekNumber, title: a.title, maxScore: a.maxScore,
         opensAt: a.opensAt, dueAt, baseDueAt: a.dueAt, isEnabled: a.isEnabled,
+        kind: a.kind, stackId: a.stackId,
         submitted: !!s, submissionId: s?.id ?? null, url: s?.url ?? null,
+        // Edited by the learner after a grade was saved: the facilitator should look again.
+        resubmitted: !!(s && s.graded_at && s.updated_at && new Date(s.updated_at) > new Date(s.graded_at)),
         submittedAt: s?.submitted_at ?? null, updatedAt: s?.updated_at ?? null,
         score: graded ? Number(s.score) : null, feedback: graded ? (s.feedback ?? null) : null, gradedAt: graded ? s.graded_at : null,
         // A learner is never told a draft exists: unpublished looks the same as not yet graded.

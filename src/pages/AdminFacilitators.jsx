@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import { Banner, Card } from '../components/ui';
+import { Banner, Card, CohortPicker } from '../components/ui';
+import useCohort from '../lib/useCohort';
 import CodesPanel from '../components/CodesPanel';
 import { fmt } from '../lib/format';
 
@@ -15,6 +16,7 @@ export default function AdminFacilitators() {
   const [err, setErr] = useState('');
   const [codes, setCodes] = useState(null);
   const [busy, setBusy] = useState(false);
+  const { cohorts: viewCohorts, cohortId: viewCohort, setCohortId: setViewCohort } = useCohort();
 
   const load = useCallback(async () => {
     const [f, c, s] = await Promise.all([api('/admin/facilitators'), api('/admin/cohorts'), api('/admin/stacks')]);
@@ -83,24 +85,47 @@ export default function AdminFacilitators() {
       </Card>
 
       <Card>
-        <h2 className="font-heading text-xl font-bold text-brand-navy mb-3">Current facilitators</h2>
-        {data?.facilitators.length === 0 && <p className="text-sm text-brand-body">No facilitators have activated their accounts yet.</p>}
+        <h2 className="font-heading text-xl font-bold text-brand-navy mb-2">Current facilitators</h2>
+        <div className="mb-3"><CohortPicker cohorts={viewCohorts} value={viewCohort} onChange={setViewCohort} /></div>
+        <p className="mb-3 text-sm text-brand-body">Facilitators with no stack in the selected cohort can be deleted. Their grades and history are kept, they can no longer sign in, and they can be restored.</p>
+        {data?.facilitators.filter((f) => f.is_active).length === 0 && <p className="text-sm text-brand-body">No facilitators have activated their accounts yet.</p>}
         <div className="space-y-3">
-          {data?.facilitators.map((f) => (
-            <div key={f.id} className="border border-brand-border rounded-xl p-3">
-              <p className="font-semibold">{f.full_name} <span className="text-sm text-brand-body font-normal">{f.email}{f.is_active ? '' : ' · deactivated'}</span></p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {f.assignments.length === 0 && <span className="text-sm text-brand-body">No assignments</span>}
-                {f.assignments.map((a) => (
-                  <span key={a.id} className="inline-flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1 text-sm">
-                    Cohort {a.cohortNumber} · {a.stack}
-                    <button aria-label={`Remove ${a.stack} assignment`} className="text-red-700 font-bold" onClick={() => unassign(a, f.full_name)}>×</button>
-                  </span>
-                ))}
+          {data?.facilitators.filter((f) => f.is_active).map((f) => {
+            const here = f.assignments.filter((a) => a.cohortId === viewCohort);
+            return (
+              <div key={f.id} className="rounded-xl border border-brand-border p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-semibold">{f.full_name} <span className="text-sm font-normal text-brand-body break-anywhere">{f.email}</span></p>
+                  {here.length === 0 && (
+                    <button disabled={busy} className="rounded-lg border border-red-200 px-3 py-1 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      onClick={() => { if (window.confirm(`Delete ${f.full_name}? They will no longer be able to sign in. Their past grades are kept.`)) run(() => api(`/admin/facilitators/${f.id}?cohortId=${viewCohort}`, { method: 'DELETE' }), `${f.full_name} was removed`); }}>Delete</button>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-brand-body">{here.length ? 'Assigned in this cohort:' : 'Not assigned to any stack in this cohort.'}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {f.assignments.length === 0 && <span className="text-sm text-brand-body">No assignments anywhere</span>}
+                  {f.assignments.map((a) => (
+                    <span key={a.id} className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${a.cohortId === viewCohort ? 'bg-blue-100' : 'bg-slate-100'}`}>
+                      Cohort {a.cohortNumber} · {a.stack}
+                      <button aria-label={`Remove ${a.stack} assignment`} className="font-bold text-red-700" onClick={() => unassign(a, f.full_name)}>×</button>
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {data?.facilitators.some((f) => !f.is_active) && (
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm font-semibold text-brand-body">Removed facilitators ({data.facilitators.filter((f) => !f.is_active).length})</summary>
+            <ul className="mt-2 space-y-1 text-sm">
+              {data.facilitators.filter((f) => !f.is_active).map((f) => (
+                <li key={f.id} className="flex flex-wrap items-center justify-between gap-2"><span>{f.full_name} <span className="text-brand-body">{f.email}</span></span>
+                  <button disabled={busy} className="font-semibold text-brand-blue underline" onClick={() => run(() => api(`/admin/facilitators/${f.id}/restore`, { method: 'POST' }), `${f.full_name} was restored`)}>Restore</button></li>
+              ))}
+            </ul>
+          </details>
+        )}
       </Card>
     </div>
   );

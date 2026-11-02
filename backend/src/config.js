@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { pickAppUrl } = require('./lib/appUrl');
 
 const REQUIRED = [
   'DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
@@ -35,7 +36,7 @@ module.exports = {
   databaseSsl: dbSsl,
   dbPoolMax: Number(process.env.DB_POOL_MAX || 10),
   // Public URL of the frontend, used in emailed links.
-  app: { url: (process.env.APP_URL || allowedOrigins[0] || '').replace(/\/$/, '') },
+  app: { url: pickAppUrl({ appUrl: process.env.APP_URL, origins: allowedOrigins }) },
   // Nothing is sent unless MAIL_DRY_RUN=false (REMINDERS_DRY_RUN is the legacy name) AND both keys below are set.
   mail: {
     resendKey: process.env.RESEND_API_KEY || '',
