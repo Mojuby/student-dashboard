@@ -47,6 +47,7 @@ function Learners({ cohortId }) {
 function GradeRow({ sub, max, cohortId, onSaved }) {
   const [score, setScore] = useState(sub.grade ? String(sub.grade.score) : '');
   const [feedback, setFeedback] = useState(sub.grade?.feedback || '');
+  const words = feedback.trim() ? feedback.trim().split(/\s+/).length : 0;  
   const [state, setState] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,6 +59,7 @@ function GradeRow({ sub, max, cohortId, onSaved }) {
     const n = Number(score);
     if (score === '' || !Number.isFinite(n) || n < 0 || n > max) { setErr(`Enter a score from 0 to ${max}.`); return; }
     setBusy(true);
+    if (words > 5000) { setErr('Feedback can be at most 5,000 words. Please shorten it.'); return; }    
     try {
       const r = await api(`/facilitator/submissions/${sub.submissionId}/grade`, { method: 'PUT', body: { score: n, feedback: feedback.trim() || null, publish } });
       setState(r.grade.published ? 'Saved and published ✓' : 'Saved as draft ✓');
@@ -75,7 +77,8 @@ function GradeRow({ sub, max, cohortId, onSaved }) {
         {sub.submissionId ? (
           <div className="space-y-1 min-w-[16rem]">
             <div className="flex items-center gap-2"><input aria-label={`Score for ${sub.name}`} type="number" min="0" max={max} step="0.5" value={score} onChange={(e) => setScore(e.target.value)} className="w-24 px-2 py-1 border border-brand-line rounded-lg" /><span className="text-xs text-brand-body">/ {max}</span></div>
-            <textarea aria-label={`Feedback for ${sub.name}`} value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={2} maxLength={2000} placeholder="Feedback for the learner" className="w-full px-2 py-1 border border-brand-line rounded-lg text-sm" />
+            <textarea aria-label={`Feedback for ${sub.name}`} value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={5} maxLength={40000} placeholder="Feedback for the learner" className="w-full px-2 py-1 border border-brand-line rounded-lg text-sm" />
+            <p className={`text-right text-xs ${words > 5000 ? 'font-semibold text-red-700' : 'text-brand-body'}`}>{words.toLocaleString()} / 5,000 words</p>
             <div className="flex gap-2"><button className={btn} disabled={busy} onClick={() => save(false)}>Save draft</button><button className={btn} disabled={busy} onClick={() => save(true)}>Save and publish</button></div>
             {state && <p className="text-xs text-green-700" role="status">{state}</p>}
             {err && <p className="text-xs text-red-700" role="alert">{err}</p>}

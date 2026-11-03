@@ -104,8 +104,11 @@ function AssessmentCard({ a, tz, onSaved }) {
       {a.kind === 'assignment' && opened && (
         canEdit ? (
           <form onSubmit={save} className="mt-3 space-y-2">
-            <label className="block text-sm font-semibold text-brand-navy">Your Google link (Docs, Sheets, Slides, Forms or Drive)
-              <input value={url} onChange={(e) => { setUrl(e.target.value); sessionStorage.setItem(draftKey, e.target.value); }} placeholder="https://docs.google.com/… or https://drive.google.com/…" className={`${input} mt-1 font-normal`} required />
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="font-semibold">Do you have more than one link to submit?</p>
+              <p className="mt-1">Put all of your work together in one Google Drive folder, then paste the link to that Drive folder in the field below. Make sure sharing is set so your facilitator can open it.</p>
+            </div>
+            <label className="block text-sm font-semibold text-brand-navy">Your Google link (Docs, Sheets, Slides, Forms or Drive)              <input value={url} onChange={(e) => { setUrl(e.target.value); sessionStorage.setItem(draftKey, e.target.value); }} placeholder="https://docs.google.com/… or https://drive.google.com/…" className={`${input} mt-1 font-normal`} required />
             </label>
             {hasGrade && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">This has already been graded. You can still change it until the deadline, and your facilitator will be able to see that you did.</p>}
             <button className={btn} disabled={busy || !url.trim()}>{busy ? 'Saving…' : a.submission ? 'Update link' : 'Submit link'}</button>
@@ -128,7 +131,7 @@ function AssessmentCard({ a, tz, onSaved }) {
       {hasGrade && a.kind === 'assignment' && (
         <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm">
           <p className="font-semibold text-green-900">Score: {a.score} / {a.maxScore}</p>
-          {a.feedback && <p className="mt-1 whitespace-pre-wrap text-green-900 break-anywhere">{a.feedback}</p>}
+          {a.feedback && <p className="mt-1 max-h-96 overflow-y-auto whitespace-pre-wrap text-green-900 break-anywhere">{a.feedback}</p>}
         </div>
       )}
       {msg && <p role="status" className="mt-2 text-sm text-green-700">{msg}</p>}

@@ -32,3 +32,7 @@ backend/*.csv
 .env.*
 !.env.example
 *.local.json
+
+backend/backup-database.js
+backend/cohort10-pre-migration-backup.json
+backend/{console.error('BACKUP

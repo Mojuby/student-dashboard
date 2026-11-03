@@ -97,9 +97,13 @@ router.get('/submissions', wrap(async (req, res) => {
   });
 }));
 
+const MAX_FEEDBACK_WORDS = 5000;
+const countWords = (t) => (t.trim() ? t.trim().split(/\s+/).length : 0);
+
 const gradeSchema = z.object({
   score: z.number().finite().min(0),
-  feedback: z.string().trim().max(2000).nullable().optional(),
+  // Limited by WORDS; the character cap is only a safety net (5,000 words is roughly 30,000 characters).
+  feedback: z.string().trim().max(40000).refine((t) => countWords(t) <= MAX_FEEDBACK_WORDS, { message: 'too_many_words' }).nullable().optional(),
   publish: z.boolean().default(false),
 });
 
@@ -108,7 +112,10 @@ const gradeSchema = z.object({
 router.put('/submissions/:id/grade', wrap(async (req, res) => {
   const id = uuid(req.params.id);
   const p = gradeSchema.safeParse(req.body);
-  if (!p.success) throw httpError(400, 'Enter a numeric score (0 or more) and optional feedback');
+  if (!p.success) {
+    if (p.error.issues.some((i) => i.message === 'too_many_words' || i.code === 'too_big')) throw httpError(400, 'Feedback can be at most 5,000 words.');
+    throw httpError(400, 'Enter a numeric score (0 or more) and optional feedback');
+  }
   const { rows: [t] } = await query(
     `select sub.id, a.max_score, c.status as cohort_status, c.id as cohort_id from submissions sub
      join assessments a on a.id = sub.assessment_id join cohorts c on c.id = a.cohort_id join learners l on l.id = sub.learner_id

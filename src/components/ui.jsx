@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+
 export function AuthCard({ title, subtitle, children }) {
   return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center p-3 sm:p-4 font-body">
@@ -10,11 +13,31 @@ export function AuthCard({ title, subtitle, children }) {
   );
 }
 
-export function Field({ label, ...props }) {
+export function Field({ label, type, ...props }) {
+  // Password fields get a show/hide button. Every other field is unchanged.
+  const isPassword = type === 'password';
+  const [visible, setVisible] = useState(false);
+  const inputClass = 'w-full px-4 py-2.5 border border-brand-line rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue';
+
   return (
     <label className="block">
       <span className="block text-sm font-semibold text-brand-navy mb-1">{label}</span>
-      <input {...props} className="w-full px-4 py-2.5 border border-brand-line rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+      {isPassword ? (
+        <span className="relative block">
+          <input {...props} type={visible ? 'text' : 'password'} className={`${inputClass} pr-12`} />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            aria-label={visible ? 'Hide password' : 'Show password'}
+            aria-pressed={visible}
+            className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-brand-body hover:text-brand-blue"
+          >
+            {visible ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
+          </button>
+        </span>
+      ) : (
+        <input {...props} type={type} className={inputClass} />
+      )}
     </label>
   );
 }
