@@ -11,7 +11,7 @@ const { createInvite } = require('../src/services/invites');
   const i = process.argv.indexOf('--cohort');
   const { rows: [cohort] } = i > -1
     ? await query('select id, number from cohorts where number = $1', [Number(process.argv[i + 1])])
-    : await query('select id, number from cohorts where is_active');
+    : await query('select id, number from cohorts where is_active order by number desc limit 1');
   if (!cohort) { console.error('No cohort found. Create and activate one in /admin first.'); process.exit(1); }
 
   const out = [];

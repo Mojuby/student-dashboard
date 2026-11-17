@@ -1,4 +1,4 @@
-const THRESHOLDS = { admin: 3, facilitator: 5, learner: 5, claim: 5 };
+const THRESHOLDS = { admin: 3, facilitator: 5, learner: 5, claim: 5, invite_request: 3, password_reset: 5 };
 const IP_THRESHOLD = 30;
 
 function lockoutDecision({

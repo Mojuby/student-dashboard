@@ -1,2 +1,6 @@
 .env
 node_modules/
+# local-only data (facilitator emails etc.)
+*.local.json
+.env.*
+!.env.example

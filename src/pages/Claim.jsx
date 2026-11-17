@@ -1,29 +1,48 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
-import { AuthCard, Field, ErrorNote, PrimaryButton } from '../components/ui';
+import { AuthCard, Field, ErrorNote, PrimaryButton, Banner } from '../components/ui';
+
+// The invitation email links to /claim?email=...#code=... The code sits in the fragment so it never reaches a server log.
+function fromLink(search, hash) {
+  const email = new URLSearchParams(search).get('email') || '';
+  const code = new URLSearchParams(hash.replace(/^#/, '')).get('code') || '';
+  return { email, code };
+}
 
 export default function Claim() {
-  const isFacilitator = useLocation().pathname.startsWith('/facilitator');
-  const [form, setForm] = useState({ email: '', code: '', password: '', confirm: '' });
+  const location = useLocation();
+  const isFacilitator = location.pathname.startsWith('/facilitator');
+  const [form, setForm] = useState(() => ({ ...fromLink(location.search, location.hash), password: '', confirm: '' }));
   const [error, setError] = useState('');
+  const [errCode, setErrCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [doneRole, setDoneRole] = useState(null);
+  const [requested, setRequested] = useState('');
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   async function submit(e) {
     e.preventDefault();
-    setError('');
+    if (busy) return; // no double submits
+    setError(''); setErrCode('');
     if (form.password !== form.confirm) return setError('Passwords do not match');
     setBusy(true);
     try {
-      const r = await api('/auth/claim', { method: 'POST', body: { email: form.email, code: form.code, password: form.password } });
+      const r = await api('/auth/claim', { method: 'POST', body: { email: form.email.trim(), code: form.code.trim(), password: form.password } });
       setDoneRole(r.role);
     } catch (err) {
       setError(err.message);
+      setErrCode(err.code || '');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function requestNew() {
+    setBusy(true); setError('');
+    try { setRequested((await api('/auth/request-invite', { method: 'POST', body: { email: form.email.trim() } })).message); }
+    catch (err) { setError(err.message); }
+    finally { setBusy(false); }
   }
 
   if (doneRole) {
@@ -47,6 +66,20 @@ export default function Claim() {
         {error && <ErrorNote>{error}</ErrorNote>}
         <PrimaryButton disabled={busy}>{busy ? 'Activating…' : 'Activate account'}</PrimaryButton>
       </form>
+
+      {errCode === 'ACCOUNT_EXISTS' && <p className="text-sm mt-4"><Link className="text-brand-blue font-semibold" to="/login">Sign in instead</Link></p>}
+
+      {!isFacilitator && (errCode === 'INVITE_INVALID' || requested) && (
+        <div className="mt-5 border-t border-brand-border pt-4 text-sm space-y-2">
+          <p className="text-brand-body">Code expired or lost? We can email a fresh invitation to the address FUSE Varsity has on file.</p>
+          <Banner message={requested} />
+          {!requested && (
+            <button type="button" onClick={requestNew} disabled={busy || !form.email} className="text-brand-blue font-semibold underline disabled:opacity-50">
+              Email me a new invitation
+            </button>
+          )}
+        </div>
+      )}
     </AuthCard>
   );
 }

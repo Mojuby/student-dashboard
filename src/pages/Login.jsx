@@ -42,6 +42,7 @@ export default function Login({ role }) {
         {error && <ErrorNote>{error}</ErrorNote>}
         <PrimaryButton disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</PrimaryButton>
       </form>
+      <p className="text-sm text-brand-body mt-4"><Link className="text-brand-blue font-semibold" to="/forgot-password">Forgot your password?</Link></p>
       {cfg.activate && (
         <p className="text-sm text-brand-body mt-4">
           First time here? <Link className="text-brand-blue font-semibold" to={cfg.activate}>Activate your account</Link>
