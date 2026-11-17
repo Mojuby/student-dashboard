@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/context';
 
-const links = [['/', 'Dashboard', true], ['/schedule', 'Schedule'], ['/assessments', 'Assessments']];
+const links = [['/', 'Dashboard', true], ['/schedule', 'Schedule'], ['/assessments', 'Assessments'], ['/surveys', 'Surveys']];
 
 export default function LearnerNav() {
   const { logout } = useAuth();

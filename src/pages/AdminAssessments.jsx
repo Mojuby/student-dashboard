@@ -140,6 +140,121 @@ function QuizBuilder({ assessmentId, onChanged }) {
   );
 }
 
+
+function ResourceRows({ items, setItems }) {
+  const set = (i, patch) => setItems(items.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  return (
+    <div>
+      <p className="text-sm font-semibold">Resources (optional)</p>
+      <p className="mb-2 text-xs text-brand-body">Links to readings, videos, templates or tools. Learners and facilitators see them with the assessment. Links must start with https://.</p>
+      {items.map((r, i) => (
+        <div key={i} className="mb-2 grid gap-2 md:grid-cols-8">
+          <input value={r.title} onChange={(e) => set(i, { title: e.target.value })} placeholder="Title" aria-label="Resource title" maxLength={160} className={`${input} md:col-span-2`} />
+          <input value={r.url} onChange={(e) => set(i, { url: e.target.value })} placeholder="https://…" aria-label="Resource link" className={`${input} md:col-span-3`} />
+          <input value={r.note} onChange={(e) => set(i, { note: e.target.value })} placeholder="Note (optional)" aria-label="Resource note" maxLength={500} className={`${input} md:col-span-2`} />
+          <button type="button" className="text-sm text-red-700 underline" onClick={() => setItems(items.filter((_, k) => k !== i))}>Remove</button>
+        </div>
+      ))}
+      {items.length < 20 && <button type="button" className={btnGhost} onClick={() => setItems([...items, { title: '', url: '', note: '' }])}>Add a resource</button>}
+    </div>
+  );
+}
+
+function ResourcesPanel({ assessmentId, onChanged }) {
+  const [items, setItems] = useState(null);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState([]);
+  useEffect(() => { api(`/admin/assessments/${assessmentId}/resources`).then((r) => setItems(r.resources)).catch((e) => setErr(e.message)); }, [assessmentId]);
+  const reload = () => api(`/admin/assessments/${assessmentId}/resources`).then((r) => setItems(r.resources)).catch((e) => setErr(e.message));
+  async function run(fn, ok) {
+    if (busy) return;
+    setBusy(true); setErr(''); setMsg('');
+    try { await fn(); if (ok) setMsg(ok); await reload(); onChanged(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  const edit = (id, patch) => setItems(items.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  return (
+    <div>
+      <h4 className="mb-1 font-semibold text-brand-navy">Resources</h4>
+      {items?.length === 0 && <p className="mb-2 text-sm text-brand-body">No resources yet.</p>}
+      <div className="space-y-2">
+        {items?.map((r) => (
+          <div key={r.id} className="grid gap-2 md:grid-cols-8">
+            <input value={r.title} onChange={(e) => edit(r.id, { title: e.target.value })} aria-label="Resource title" className={`${input} md:col-span-2`} />
+            <input value={r.url} onChange={(e) => edit(r.id, { url: e.target.value })} aria-label="Resource link" className={`${input} md:col-span-3`} />
+            <input value={r.note || ''} onChange={(e) => edit(r.id, { note: e.target.value })} aria-label="Resource note" className={`${input} md:col-span-2`} />
+            <div className="flex gap-3 text-sm">
+              <button type="button" className="font-semibold text-brand-blue underline" disabled={busy} onClick={() => run(() => api(`/admin/assessment-resources/${r.id}`, { method: 'PATCH', body: { title: r.title, url: r.url, note: r.note || null } }), 'Resource saved')}>Save</button>
+              <button type="button" className="text-red-700 underline" disabled={busy} onClick={() => { if (window.confirm(`Remove "${r.title}"?`)) run(() => api(`/admin/assessment-resources/${r.id}`, { method: 'DELETE' }), 'Resource removed'); }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 space-y-2">
+        <ResourceRows items={draft} setItems={setDraft} />
+        {draft.length > 0 && (
+          <button type="button" className={btn} disabled={busy} onClick={async () => {
+            for (const r of draft.filter((x) => x.title.trim() || x.url.trim())) {
+              try { await api(`/admin/assessments/${assessmentId}/resources`, { method: 'POST', body: { title: r.title, url: r.url, note: r.note || null } }); } catch (e) { setErr(e.message); return; }
+            }
+            setDraft([]); setMsg('Resources added'); await reload(); onChanged();
+          }}>Save new resources</button>
+        )}
+      </div>
+      {msg && <p role="status" className="mt-2 text-sm text-green-700">{msg}</p>}
+      {err && <p role="alert" className="mt-2 text-sm text-red-700">{err}</p>}
+    </div>
+  );
+}
+
+// Facilitators cannot edit assessments; they send requests here. The admin makes the change on the assessment (it is live for
+// learners straight away) and marks the request done.
+function ChangeRequests({ onGo }) {
+  const [status, setStatus] = useState('open');
+  const [list, setList] = useState(null);
+  const [notes, setNotes] = useState({});
+  const [err, setErr] = useState('');
+  const load = (s) => api(`/admin/change-requests?status=${s}`).then((r) => setList(r.requests)).catch((e) => setErr(e.message));
+  useEffect(() => { api(`/admin/change-requests?status=${status}`).then((r) => setList(r.requests)).catch((e) => setErr(e.message)); }, [status]);
+  async function act(id, next) {
+    setErr('');
+    try { await api(`/admin/change-requests/${id}`, { method: 'PATCH', body: { status: next, note: (notes[id] || '').trim() || null } }); await load(status); window.dispatchEvent(new Event('fv:requests-changed')); } catch (e) { setErr(e.message); }
+  }
+  return (
+    <Card>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-heading text-lg font-bold">Change requests from facilitators</h2>
+        <div role="tablist" className="inline-flex rounded-lg border border-brand-line bg-white p-0.5">
+          {[['open', 'Open'], ['implemented', 'Done'], ['declined', 'Declined']].map(([k, l]) => <button key={k} role="tab" aria-selected={status === k} onClick={() => { setStatus(k); setList(null); }} className={`rounded-md px-3 py-1 text-sm font-semibold ${status === k ? 'bg-brand-blue text-white' : 'text-brand-body'}`}>{l}</button>)}
+        </div>
+      </div>
+      <p className="mb-2 text-sm text-brand-body">Make the change on the assessment below (it goes live for learners immediately), then mark the request as done.</p>
+      {err && <p role="alert" className="mb-2 text-sm text-red-700">{err}</p>}
+      {list?.length === 0 && <p className="text-sm text-brand-body">{status === 'open' ? 'No open requests.' : 'Nothing here yet.'}</p>}
+      <div className="space-y-3">
+        {list?.map((r) => (
+          <div key={r.id} className="rounded-xl border border-brand-border p-3">
+            <p className="text-sm"><span className="font-semibold">{r.requested_by}</span> asked about <span className="font-semibold">{r.cohort_name} · Week {r.week_number} · {r.title}{r.stack ? ` (${r.stack})` : ''}</span> <span className="text-xs text-brand-body">· {fmt(r.created_at)}</span></p>
+            <p className="mt-1 whitespace-pre-wrap text-sm break-anywhere">{r.message}</p>
+            {r.status === 'open' ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" className={btnGhost} onClick={() => onGo(r)}>Go to this assessment</button>
+                <input value={notes[r.id] || ''} onChange={(e) => setNotes({ ...notes, [r.id]: e.target.value })} placeholder="Note for the facilitator (optional)" aria-label="Note for the facilitator" maxLength={1000} className="min-w-[12rem] flex-1 rounded-lg border border-brand-line px-3 py-2 text-sm" />
+                <button type="button" className={btn} onClick={() => act(r.id, 'implemented')}>Mark as done</button>
+                <button type="button" className={`${btnGhost} text-red-700`} onClick={() => act(r.id, 'declined')}>Decline</button>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-brand-body">{r.status === 'implemented' ? 'Done' : 'Declined'}{r.resolved_by ? ` by ${r.resolved_by}` : ''} · {fmt(r.resolved_at)}{r.admin_note ? `: ${r.admin_note}` : ''}
+                <button type="button" className="ml-3 text-brand-blue underline" onClick={() => act(r.id, 'open')}>Reopen</button></p>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function Manage({ a, run, reload }) {
   const [v, setV] = useState({ title: a.title, maxScore: a.maxScore, instructions: a.instructions || '' });
   return (
@@ -152,6 +267,7 @@ function Manage({ a, run, reload }) {
         <div className="md:col-span-3"><button className={btn}>Save details</button>{a.hasWork && <span className="ml-3 text-xs text-brand-body">The maximum score is locked because learners have submitted work.</span>}</div>
       </form>
       {a.kind === 'assignment' ? <FilesPanel assessmentId={a.id} onChanged={reload} /> : <QuizBuilder assessmentId={a.id} onChanged={reload} />}
+      <ResourcesPanel assessmentId={a.id} onChanged={reload} />
     </div>
   );
 }
@@ -165,6 +281,7 @@ export default function AdminAssessments() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState('assignment');
+  const [newRes, setNewRes] = useState([]);
 
   const reload = useCallback(() => (cohortId ? api(`/admin/assessments?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message)) : Promise.resolve()), [cohortId]);
   useEffect(() => { api('/admin/stacks').then((r) => setStacks(r.stacks.filter((s) => s.is_active))).catch((e) => setErr(e.message)); }, []);
@@ -181,9 +298,10 @@ export default function AdminAssessments() {
     const f = Object.fromEntries(new FormData(form));
     const r = await run(() => api(`/admin/assessments?cohortId=${cohortId}`, { method: 'POST', body: {
       weekNumber: Number(f.week), stackId: f.stackId || null, kind: f.kind, title: f.title, maxScore: Number(f.maxScore),
-      opensAtLocal: f.opens, dueAtLocal: f.due, instructions: f.instructions || null } }),
+      opensAtLocal: f.opens, dueAtLocal: f.due, instructions: f.instructions || null,
+      resources: newRes.filter((x) => x.title.trim() || x.url.trim()).map((x) => ({ title: x.title, url: x.url, note: x.note || null })) } }),
     f.kind === 'quiz' ? 'Quiz created. Open it below to add the questions.' : 'Assessment created. Open it below to add instructions and files.');
-    if (r) { form.reset(); setKind('assignment'); setOpen(r.id); }
+    if (r) { form.reset(); setKind('assignment'); setNewRes([]); setOpen(r.id); }
   }
   async function remove(a) {
     if (!window.confirm(`Delete Week ${a.weekNumber} "${a.title}"${a.stack ? ` for ${a.stack}` : ''}? This cannot be undone.`)) return;
@@ -198,6 +316,8 @@ export default function AdminAssessments() {
       <CohortPicker cohorts={cohorts} value={cohortId} onChange={(id) => { setCohortId(id); setData(null); setOpen(''); }} />
       <p className="text-sm text-brand-body">Every cohort starts with a standard assessment for Weeks 1 to 5 that applies to all stacks. Add a stack-specific one, or a quiz, for any week from 1 to 6. A stack-specific assessment replaces the standard one for that stack in the same week. Change dates and deadlines on the Schedule page.</p>
 
+      <ChangeRequests onGo={(r) => { if (r.cohort_id !== cohortId) setCohortId(r.cohort_id); setOpen(r.assessment_id); window.scrollTo({ top: document.body.scrollHeight / 3, behavior: 'smooth' }); }} />
+
       <Card>
         <h2 className="mb-3 font-heading text-lg font-bold">New assessment</h2>
         <form onSubmit={create} className="grid gap-3 md:grid-cols-3">
@@ -210,6 +330,7 @@ export default function AdminAssessments() {
           <label className="text-sm font-semibold">Due<input name="due" type="datetime-local" className={`${input} mt-1 font-normal`} required /></label>
           <div className="hidden md:block" />
           <label className="text-sm font-semibold md:col-span-3">{kind === 'quiz' ? 'Introduction (optional)' : 'Instructions'}<textarea name="instructions" rows={3} maxLength={10000} className={`${input} mt-1 font-normal`} /></label>
+          <div className="md:col-span-3"><ResourceRows items={newRes} setItems={setNewRes} /></div>
           <div className="md:col-span-3"><button className={btn} disabled={busy || !cohortId}>Create {kind === 'quiz' ? 'quiz' : 'assessment'}</button><span className="ml-3 text-xs text-brand-body">Times are in the cohort's timezone{data ? ` (${data.timezone})` : ''}.</span></div>
         </form>
       </Card>
@@ -224,7 +345,7 @@ export default function AdminAssessments() {
                 <div>
                   <p className="font-semibold text-brand-navy">{a.title}{!a.isEnabled ? ' (disabled)' : ''}</p>
                   <p className="text-sm text-brand-body">{a.kind === 'quiz' ? 'Quiz' : 'Assignment'} · {a.stack ? `${a.stack} only` : 'All stacks'} · out of {a.maxScore} · opens {fmt(a.opensAt, data.timezone)} · due {fmt(a.dueAt, data.timezone)}</p>
-                  <p className="text-xs text-brand-body">{a.kind === 'quiz' ? `${a.questionCount} question(s)` : `${a.fileCount} file(s)`}{a.instructions ? ' · has instructions' : ' · no instructions yet'}{a.hasWork ? ' · learners have started' : ''}</p>
+                  <p className="text-xs text-brand-body">{a.kind === 'quiz' ? `${a.questionCount} question(s)` : `${a.fileCount} file(s)`}{` · ${a.resourceCount ?? 0} resource(s)`}{a.instructions ? ' · has instructions' : ' · no instructions yet'}{a.hasWork ? ' · learners have started' : ''}</p>
                 </div>
                 <div className="flex gap-2">
                   <button className={btnGhost} onClick={() => setOpen(open === a.id ? '' : a.id)} aria-expanded={open === a.id}>{open === a.id ? 'Close' : 'Manage'}</button>

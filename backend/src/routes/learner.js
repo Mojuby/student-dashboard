@@ -71,7 +71,7 @@ router.get('/overview', wrap(async (req, res) => {
   if (!me) throw httpError(404, 'Your enrolment could not be found.');
   const now = new Date();
 
-  const [ev, grp, ann, orientation, enrol, detail, files] = await Promise.all([
+  const [ev, grp, ann, orientation, enrol, detail, files, resources] = await Promise.all([
     query(
       `select e.id, e.title, e.description, e.event_type, e.starts_at, e.ends_at, e.link_url from events e
        where e.cohort_id = $1 and e.is_active and (e.stack_id is null or e.stack_id = $2) and ${eventAudience('$3')}
@@ -86,8 +86,13 @@ router.get('/overview', wrap(async (req, res) => {
     query(
       `select f.id, f.assessment_id, f.file_name, f.size_bytes from assessment_files f join assessments a on a.id = f.assessment_id
        where a.cohort_id = $1 order by f.created_at`, [l.cohort_id]),
+    query(
+      `select r.id, r.assessment_id, r.title, r.url, r.note from assessment_resources r join assessments a on a.id = r.assessment_id
+       where a.cohort_id = $1 order by r.position, r.created_at`, [l.cohort_id]),
   ]);
   const instructions = new Map(detail.rows.map((r) => [r.id, r.instructions]));
+  const resBy = new Map();
+  for (const r of resources.rows) resBy.set(r.assessment_id, [...(resBy.get(r.assessment_id) || []), { id: r.id, title: r.title, url: r.url, note: r.note }]);
   const filesBy = new Map();
   for (const f of files.rows) filesBy.set(f.assessment_id, [...(filesBy.get(f.assessment_id) || []), { id: f.id, name: f.file_name, size: f.size_bytes }]);
 
@@ -114,6 +119,7 @@ router.get('/overview', wrap(async (req, res) => {
       // Instructions and files stay hidden until the assessment actually opens (same rule the download endpoint enforces).
       instructions: new Date(c.opensAt) > now ? null : (instructions.get(c.assessmentId) || null),
       files: new Date(c.opensAt) > now ? [] : (filesBy.get(c.assessmentId) || []),
+      resources: resBy.get(c.assessmentId) || [], // study material is visible as soon as the assessment is listed
       submission: c.url ? { url: c.url, submittedAt: c.submittedAt } : null,
       editedAfterGrade: c.resubmitted,
       score: c.score, feedback: c.feedback, // null until a facilitator publishes: never a fake zero

@@ -4,6 +4,7 @@ import useCohort from '../lib/useCohort';
 import { fmt } from '../lib/format';
 import { Banner, Card, CohortPicker } from '../components/ui';
 import ScheduleView from '../components/ScheduleView';
+import { nowLocalInput } from '../lib/calendar';
 
 const input = 'px-3 py-2 border border-brand-line rounded-lg bg-white';
 const btn = 'bg-brand-blue text-white px-4 py-2 rounded-lg font-semibold hover:bg-brand-navy disabled:opacity-50';
@@ -55,7 +56,12 @@ export default function AdminSchedule() {
     try { const r = await fn(); if (ok) setMsg(ok); await load(cohortId); return r; } catch (e) { setErr(e.message); return null; }
   }
   const fd = (e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); e.currentTarget.reset(); return f; };
-  const addExt = (e) => { const f = fd(e); run(() => api(`/admin/assessments/${f.assessmentId}/extensions`, { method: 'POST', body: { learnerId: f.learnerId, newDueAtLocal: f.due, reason: f.reason } }), 'Extension recorded'); };
+  const addExt = (e) => {
+    const f = fd(e);
+    // The server enforces this too; checking here gives an instant, clear message.
+    if (f.due && f.due <= nowLocalInput(events?.timezone || sched?.timezone || 'Africa/Lagos')) { setErr('The new deadline must be in the future. A date that has already passed would not give the learner any extra time.'); return; }
+    run(() => api(`/admin/assessments/${f.assessmentId}/extensions`, { method: 'POST', body: { learnerId: f.learnerId, newDueAtLocal: f.due, reason: f.reason } }), 'Extension recorded');
+  };
   const evBody = (f) => ({ title: f.title, description: f.description || null, eventType: f.type, stackId: f.stackId || null, startsAtLocal: f.starts, endsAtLocal: f.ends || null, linkUrl: f.link || null, audience: f.type === 'capstone_milestone' ? 'capstone' : (f.audience || 'everyone') });
   const addEvent = (e) => { const f = fd(e); setPrefillDay(''); run(() => api(`/admin/events?cohortId=${cohortId}`, { method: 'POST', body: evBody(f) }), 'Event created'); };
   const generate = async () => {
@@ -113,7 +119,7 @@ export default function AdminSchedule() {
           <form onSubmit={addExt} className="flex flex-wrap gap-2 items-end">
             <select name="assessmentId" className={input} required>{sched.assessments.map((a) => <option key={a.id} value={a.id}>Week {a.weekNumber}{a.stack ? ` (${a.stack})` : ''}</option>)}</select>
             <select name="learnerId" className={input} required><option value="">Learner…</option>{sched.learners.map((l) => <option key={l.id} value={l.id}>{l.full_name}</option>)}</select>
-            <input name="due" type="datetime-local" className={input} required />
+            <input name="due" type="datetime-local" min={nowLocalInput(events?.timezone || sched?.timezone || 'Africa/Lagos')} className={input} required aria-label="New deadline (must be in the future)" />
             <input name="reason" placeholder="Reason (required)" className={`${input} flex-1 min-w-[180px]`} required />
             <button className={btn}>Record extension</button>
           </form>

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dayKey, groupByDay, isPast, monthCells, monthLabel, timeLabel, typeStyle } from './calendar.js';
+import { dayKey, groupByDay, isPast, monthCells, monthLabel, nowLocalInput, timeLabel, typeStyle } from './calendar.js';
 
 test('days are grouped in the COHORT timezone, so a late class never lands on the wrong date', () => {
   // 23:30 UTC on the 7th is already 00:30 on the 8th in Lagos (UTC+1).
@@ -40,4 +40,11 @@ test('events are sorted and grouped by local day; past events are detected by th
 test('unknown event types fall back to a neutral style', () => {
   assert.ok(typeStyle('class').includes('blue'));
   assert.equal(typeStyle('something-new'), typeStyle('other'));
+});
+
+test('nowLocalInput gives the current time in the cohort timezone, in datetime-local format', () => {
+  const now = new Date('2026-11-07T23:30:00Z');
+  assert.equal(nowLocalInput('Africa/Lagos', now), '2026-11-08T00:30', 'Lagos is UTC+1, so it is already the next day');
+  assert.equal(nowLocalInput('UTC', now), '2026-11-07T23:30');
+  assert.equal(nowLocalInput('UTC', new Date('2026-11-07T00:05:00Z')), '2026-11-07T00:05', 'midnight is 00, never 24');
 });

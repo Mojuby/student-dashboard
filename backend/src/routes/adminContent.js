@@ -9,6 +9,7 @@ const { toUtcDate } = require('../lib/tz');
 const { quizSchema } = require('../lib/quiz');
 const { fetchCohortRows, buildDashboard } = require('../services/sheets');
 const storage = require('../services/storage');
+const { normalizeHttps } = require('../lib/urls');
 
 const log = (req, action, entityType, entityId, details) =>
   audit({ actorId: req.user.id, action, entityType, entityId, details, ip: req.ip });
@@ -35,6 +36,7 @@ const createSchema = z.object({
   opensAtLocal: z.string(),
   dueAtLocal: z.string(),
   instructions: z.string().trim().max(10000).nullable().optional(),
+  resources: z.array(z.object({ title: z.string().trim().min(2).max(160), url: z.string().max(2048), note: z.string().trim().max(500).nullable().optional() })).max(20).optional(),
 });
 
 router.post('/assessments', wrap(async (req, res) => {
@@ -46,6 +48,8 @@ router.post('/assessments', wrap(async (req, res) => {
   const due = localDate(p.data.dueAtLocal, tz);
   if (!(due > opens)) throw httpError(400, 'The deadline must be after the opening date');
   if (p.data.stackId && !(await query('select 1 from stacks where id = $1 and is_active', [p.data.stackId])).rowCount) throw httpError(400, 'Choose an active stack');
+  const resources = (p.data.resources || []).map((r) => ({ ...r, url: normalizeHttps(r.url) }));
+  if (resources.some((r) => !r.url)) throw httpError(400, 'Each resource needs a title and a link that starts with https://');
   let row;
   try {
     ({ rows: [row] } = await query(
@@ -55,6 +59,9 @@ router.post('/assessments', wrap(async (req, res) => {
   } catch (e) {
     if (e.code === '23505') throw httpError(409, 'There is already an assessment for that week and stack in this cohort. Edit it instead.');
     throw e;
+  }
+  for (const [i, r] of resources.entries()) {
+    await query('insert into assessment_resources (assessment_id, title, url, note, position, created_by) values ($1,$2,$3,$4,$5,$6)', [row.id, r.title, r.url, r.note || null, i, req.user.id]);
   }
   await log(req, 'assessment.create', 'assessment', row.id, { cohortId, week: p.data.weekNumber, kind: p.data.kind, stackId: p.data.stackId ?? null });
   res.status(201).json({ id: row.id });

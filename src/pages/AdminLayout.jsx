@@ -5,7 +5,7 @@ import { useAuth } from '../auth/context';
 
 const links = [
   ['/admin', 'Setup', true], ['/admin/onboarding', 'Onboarding'], ['/admin/learners', 'Learners'], ['/admin/facilitators', 'Facilitators'],
-  ['/admin/assessments', 'Assessments'], ['/admin/schedule', 'Schedule'], ['/admin/groups', 'Capstone groups'], ['/admin/analytics', 'Analytics'],
+  ['/admin/assessments', 'Assessments'], ['/admin/schedule', 'Schedule'], ['/admin/attendance', 'Attendance'], ['/admin/surveys', 'Surveys'], ['/admin/groups', 'Capstone groups'], ['/admin/analytics', 'Analytics'], ['/admin/reports', 'Reports'],
   ['/admin/feedback', 'Feedback'], ['/admin/activity', 'Activity log'],
 ];
 
@@ -13,13 +13,18 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const [openFeedback, setOpenFeedback] = useState(0);
+  const [openRequests, setOpenRequests] = useState(0);
 
   // Refresh the "open feedback" count when moving between pages and after a resolve.
   useEffect(() => {
-    const load = () => api('/admin/feedback/summary').then((r) => setOpenFeedback(r.open)).catch(() => {});
+    const load = () => {
+      api('/admin/feedback/summary').then((r) => setOpenFeedback(r.open)).catch(() => {});
+      api('/admin/change-requests/summary').then((r) => setOpenRequests(r.open)).catch(() => {});
+    };
     load();
     window.addEventListener('fv:feedback-changed', load);
-    return () => window.removeEventListener('fv:feedback-changed', load);
+    window.addEventListener('fv:requests-changed', load);
+    return () => { window.removeEventListener('fv:feedback-changed', load); window.removeEventListener('fv:requests-changed', load); };
   }, [pathname]);
 
   return (
@@ -30,6 +35,7 @@ export default function AdminLayout() {
           <NavLink key={to} to={to} end={end}
             className={({ isActive }) => `flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${isActive ? 'bg-brand-blue text-white' : 'text-white/80 hover:text-white'}`}>
             {label}
+            {to === '/admin/assessments' && openRequests > 0 && <span className="rounded-full bg-amber-400 px-1.5 text-xs font-bold text-brand-navy" aria-label={`${openRequests} change requests`}>{openRequests}</span>}
             {to === '/admin/feedback' && openFeedback > 0 && <span className="rounded-full bg-amber-400 px-1.5 text-xs font-bold text-brand-navy" aria-label={`${openFeedback} open`}>{openFeedback}</span>}
           </NavLink>
         ))}

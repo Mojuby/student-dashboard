@@ -120,11 +120,13 @@ export default function LearnerDashboard() {
   const [grades, setGrades] = useState(null);
   const [overviewErr, setOverviewErr] = useState('');
   const [gradesErr, setGradesErr] = useState(null);
+  const [surveys, setSurveys] = useState([]);
 
   // Independent requests: a grade-sheet problem must never hide the rest of the dashboard.
   useEffect(() => {
     api('/learner/overview').then(setOverview).catch((e) => setOverviewErr(e.message));
     api('/learner/dashboard').then(setGrades).catch((e) => setGradesErr(e));
+    api('/learner/surveys').then((r) => setSurveys(r.surveys.filter((s) => !s.submitted))).catch(() => {});
   }, []);
 
   if (overviewErr) {
@@ -189,6 +191,14 @@ export default function LearnerDashboard() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {surveys.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 border-[#0A3DA8]">
+            <h2 className="text-lg font-bold text-[#111827] mb-1">{surveys.length === 1 ? 'A survey is waiting for you' : 'Surveys are waiting for you'}</h2>
+            <ul className="text-sm text-gray-700 space-y-1">{surveys.map((s) => <li key={s.id}>{s.title} · closes {fmt(s.closesAt, overview.timezone)}</li>)}</ul>
+            <Link to="/surveys" className="inline-block mt-2 text-[#0A3DA8] font-semibold underline">Take the survey</Link>
           </div>
         )}
 

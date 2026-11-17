@@ -154,6 +154,7 @@ router.get('/assessments', wrap(async (req, res) => {
   const { rows } = await query(
     `select a.id, a.week_number, a.title, a.max_score, a.opens_at, a.due_at, a.is_enabled, a.stack_id, s.name as stack, a.kind, a.instructions,
             (select count(*)::int from assessment_files f where f.assessment_id = a.id) as file_count,
+            (select count(*)::int from assessment_resources rs where rs.assessment_id = a.id) as resource_count,
             (select count(*)::int from quiz_questions q where q.assessment_id = a.id) as question_count,
             ((select count(*) from submissions x where x.assessment_id = a.id) + (select count(*) from quiz_attempts y where y.assessment_id = a.id))::int as work_count
      from assessments a left join stacks s on s.id = a.stack_id where a.cohort_id = $1 order by a.week_number, s.name nulls first`, [cohortId]);
@@ -166,7 +167,7 @@ router.get('/assessments', wrap(async (req, res) => {
     timezone: tz, learners,
     assessments: rows.map((a) => ({
       id: a.id, weekNumber: a.week_number, title: a.title, maxScore: Number(a.max_score), isEnabled: a.is_enabled,
-      stackId: a.stack_id, stack: a.stack, kind: a.kind, instructions: a.instructions, fileCount: a.file_count, questionCount: a.question_count, hasWork: a.work_count > 0,
+      stackId: a.stack_id, stack: a.stack, kind: a.kind, instructions: a.instructions, fileCount: a.file_count, resourceCount: a.resource_count, questionCount: a.question_count, hasWork: a.work_count > 0,
       opensAtLocal: toLocalInput(a.opens_at, tz), dueAtLocal: toLocalInput(a.due_at, tz), opensAt: a.opens_at, dueAt: a.due_at,
     })),
     extensions: ext,
@@ -206,6 +207,8 @@ router.post('/assessments/:id/extensions', wrap(async (req, res) => {
     'select a.cohort_id, a.due_at, c.timezone from assessments a join cohorts c on c.id = a.cohort_id where a.id = $1', [id]);
   if (!a) throw httpError(404, 'Assessment not found');
   const newDue = localDate(p.data.newDueAtLocal, a.timezone);
+  // An extension already in the past gives the learner no extra time at all (they would stay locked out).
+  if (!(newDue > new Date())) throw httpError(400, 'The new deadline must be in the future. A date that has already passed would not give the learner any extra time.');
   if (!(newDue > new Date(a.due_at))) throw httpError(400, 'An extension must be later than the current deadline');
   const ok = await query('select 1 from learners where id = $1 and cohort_id = $2', [p.data.learnerId, a.cohort_id]);
   if (!ok.rowCount) throw httpError(400, 'That learner is not in this cohort');

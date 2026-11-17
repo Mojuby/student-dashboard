@@ -101,6 +101,17 @@ function AssessmentCard({ a, tz, onSaved }) {
         </ul>
       )}
 
+      {a.resources?.length > 0 && (
+        <div className="mt-3 rounded-lg border border-brand-border p-3 text-sm">
+          <p className="mb-1 font-semibold text-brand-navy">Resources</p>
+          <ul className="space-y-1">
+            {a.resources.map((r) => (
+              <li key={r.id}><a href={r.url} target="_blank" rel="noreferrer noopener" className="text-brand-blue underline break-anywhere">{r.title}</a>{r.note ? <span className="text-brand-body"> · {r.note}</span> : null}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {a.kind === 'assignment' && opened && (
         canEdit ? (
           <form onSubmit={save} className="mt-3 space-y-2">

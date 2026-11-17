@@ -20,6 +20,10 @@ import AdminAnalytics from './pages/AdminAnalytics';
 import AdminActivity from './pages/AdminActivity';
 import AdminAssessments from './pages/AdminAssessments';
 import AdminFeedback from './pages/AdminFeedback';
+import AdminAttendance from './pages/AdminAttendance';
+import AdminReports from './pages/AdminReports';
+import AdminSurveys from './pages/AdminSurveys';
+import LearnerSurveys from './pages/LearnerSurveys';
 
 export default function App() {
   return (
@@ -38,6 +42,7 @@ export default function App() {
       <Route path="/" element={<RequireRole role="learner" loginPath="/login"><LearnerDashboard /></RequireRole>} />
       <Route path="/assessments" element={<RequireRole role="learner" loginPath="/login"><LearnerAssessments /></RequireRole>} />
       <Route path="/schedule" element={<RequireRole role="learner" loginPath="/login"><LearnerSchedule /></RequireRole>} />
+      <Route path="/surveys" element={<RequireRole role="learner" loginPath="/login"><LearnerSurveys /></RequireRole>} />
 
       {/* facilitator */}
       <Route path="/facilitator" element={<RequireRole role="facilitator" loginPath="/facilitator/login"><FacilitatorHome /></RequireRole>} />
@@ -50,6 +55,9 @@ export default function App() {
         <Route path="facilitators" element={<AdminFacilitators />} />
         <Route path="assessments" element={<AdminAssessments />} />
         <Route path="feedback" element={<AdminFeedback />} />
+        <Route path="attendance" element={<AdminAttendance />} />
+        <Route path="reports" element={<AdminReports />} />
+        <Route path="surveys" element={<AdminSurveys />} />
         <Route path="groups" element={<AdminGroups />} />
         <Route path="schedule" element={<AdminSchedule />} />
         <Route path="analytics" element={<AdminAnalytics />} />

@@ -51,7 +51,7 @@ test('migration 003 upgrades legacy data without altering it, and is repeatable'
     const before = await snap();
     assert.ok(before.cohorts.length === 3 && before.learners.length === 2 && before.grades.length === 1, 'snapshot must not be empty');
 
-    assert.deepEqual(await runMigrations(c, { log: () => {} }), ['003_multi_cohort_onboarding.sql', '004_feedback_calendar_assessments.sql']);
+    assert.deepEqual(await runMigrations(c, { log: () => {} }), ['003_multi_cohort_onboarding.sql', '004_feedback_calendar_assessments.sql', '005_attendance_reports.sql', '006_resources_requests_surveys.sql']);
     assert.deepEqual(await snap(), before, 'legacy columns must be identical after the upgrade');
 
     const st = Object.fromEntries((await c.query('select number,status,is_active from cohorts')).rows.map((r) => [r.number, r]));

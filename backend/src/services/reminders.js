@@ -23,7 +23,8 @@ async function runReminders({ now = new Date(), onlyCohortId = null, preview = f
       : reminderSlot({ now, timezone: c.timezone, week1ClassDate: c.week1, reminderHour: c.reminder_hour });
     if (!slotInfo) { out.push({ cohort: c.number, skipped: 'Not a reminder window' }); continue; }
 
-    const { learners } = await loadProgress({ cohortId: c.id, now });
+    const { learners: everyone } = await loadProgress({ cohortId: c.id, now });
+    const learners = everyone.filter((l) => l.status !== 'withdrawn'); // withdrawn learners are never reminded
     const weekNumber = slotInfo.weekNumber ?? cohortWeek(now, c.timezone, c.week1);
     const consolidated = isConsolidatedWeek(weekNumber);
     const groups = selectReminderTargets({ learners, now });

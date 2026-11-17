@@ -299,6 +299,7 @@ describe('feedback, calendar, assessments, quizzes, files, capstone, reminders',
         return (await h.db.query(`insert into learners (cohort_id,stack_id,full_name,email,profile_id,status) values ($1,$2,$3,$4,$5,'active') returning id`, [rc, pm, name, email, pid])).rows[0].id;
       };
       const P = await mk('p.rem@example.test', 'Pat Unsubmitted'); const Q = await mk('q.rem@example.test', 'Quin Submitted'); const R = await mk('r.rem@example.test', 'Remi Extended');
+      const W = await mk('w.rem@example.test', 'Wendy Withdrawn'); await h.db.query(`update learners set status = 'withdrawn' where id = $1`, [W]);
       const sent = (to) => h.mail.sent.filter((m) => m.to === to);
 
       // Week 3 (Wednesday 21 Oct 09:30 Lagos): the open Week 3 assessment, one email each for those who have not submitted.
@@ -309,6 +310,7 @@ describe('feedback, calendar, assessments, quizzes, files, capstone, reminders',
       assert.equal(out3.cohorts[0].consolidated, false);
       assert.equal(sent('p.rem@example.test').length, 1); assert.match(sent('p.rem@example.test')[0].subject, /Week 3/);
       assert.equal(sent('q.rem@example.test').length, 0, 'submitted (even though ungraded) = no reminder');
+      assert.equal(sent('w.rem@example.test').length, 0, 'withdrawn learners are never reminded');
       await runReminders({ now: wk3, onlyCohortId: rc });
       assert.equal(sent('p.rem@example.test').length, 1, 'running again the same day sends nothing more');
 

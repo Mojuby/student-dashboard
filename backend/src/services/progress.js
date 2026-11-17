@@ -15,7 +15,7 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
   const [asm, lrn, sub, ext, flg, qz] = await Promise.all([
     query('select id, week_number, title, max_score, opens_at, due_at, is_enabled, stack_id, kind from assessments where cohort_id = $1 order by week_number, stack_id nulls first', [cohortId]),
     query(
-      `select l.id, l.profile_id, l.full_name, l.email, l.stack_id, s.name as stack, g.id as group_id, g.name as group_name
+      `select l.id, l.profile_id, l.full_name, l.email, l.status, l.stack_id, s.name as stack, g.id as group_id, g.name as group_name
        from learners l
        join stacks s on s.id = l.stack_id
        left join capstone_members m on m.learner_id = l.id
@@ -90,7 +90,7 @@ async function loadProgress({ cohortId, facilitatorId = null, learnerId = null, 
     const last = gradedCells[gradedCells.length - 1];
     const activity = enabled.flatMap((c) => [c.submittedAt, c.updatedAt]).filter(Boolean).map((d) => new Date(d).getTime());
     return {
-      id: l.id, profileId: l.profile_id, name: l.full_name, email: l.email, stack: l.stack, stackId: l.stack_id,
+      id: l.id, profileId: l.profile_id, name: l.full_name, email: l.email, status: l.status, stack: l.stack, stackId: l.stack_id,
       group: l.group_name ? { id: l.group_id, name: l.group_name } : null,
       cells,
       risk: evaluateRisk({ cells: enabled, now, lowScorePct: cohort.risk_low_score_pct, missingThreshold: cohort.risk_missing_threshold }),

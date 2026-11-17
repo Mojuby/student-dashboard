@@ -144,6 +144,100 @@ function Schedule({ cohortId }) {
   );
 }
 
+
+function AssessmentsView({ cohortId }) {
+  const [data, setData] = useState(null);
+  const [mine, setMine] = useState([]);
+  const [asking, setAsking] = useState('');
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api(`/facilitator/assessment-overview?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message));
+    api('/facilitator/change-requests').then((r) => setMine(r.requests)).catch(() => {});
+  }, [cohortId]);
+  async function send(a) {
+    if (busy) return;
+    setBusy(true); setErr(''); setMsg('');
+    try {
+      await api('/facilitator/change-requests', { method: 'POST', body: { assessmentId: a.id, message: text } });
+      setMsg('Your request was sent to the admin.'); setAsking(''); setText('');
+      setMine((await api('/facilitator/change-requests')).requests);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  async function download(f) { try { window.open((await api(`/facilitator/assessment-files/${f.id}/url`)).url, '_blank', 'noopener'); } catch (e) { setErr(e.message); } }
+  const STATUS = { open: 'Waiting for the admin', implemented: 'Done', declined: 'Declined' };
+  return (
+    <div className="space-y-3">
+      <Card><p className="text-sm text-brand-body">These are the assessments, instructions, files and resources the admin has set for each week of your stacks. You cannot edit them here. If something should change, use <b>Request a change</b> and the admin will update it for the learners.</p></Card>
+      <Banner error={err} message={msg} />
+      {!data && !err && <p className="text-brand-body">Loading…</p>}
+      {data?.assessments.map((a) => (
+        <Card key={a.id}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="font-heading text-lg font-bold text-brand-navy">Week {a.weekNumber}: {a.title}</h3>
+              <p className="text-sm text-brand-body">{a.kind === 'quiz' ? 'Quiz' : 'Assignment'} · {a.stack ? `${a.stack} only` : 'All stacks'} · out of {a.maxScore} · opens {fmt(a.opensAt)} · due {fmt(a.dueAt)}</p>
+            </div>
+            <button className="rounded-lg border border-brand-line bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50" onClick={() => { setAsking(asking === a.id ? '' : a.id); setText(''); setMsg(''); }}>Request a change</button>
+          </div>
+          {a.instructions ? <div className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm break-anywhere"><p className="mb-1 font-semibold text-brand-navy">Instructions</p>{a.instructions}</div> : <p className="mt-3 text-sm text-brand-body">No instructions have been added yet.</p>}
+          {a.files.length > 0 && <ul className="mt-3 space-y-1 text-sm">{a.files.map((f) => <li key={f.id}><button type="button" onClick={() => download(f)} className="text-left text-brand-blue underline break-anywhere">⬇ {f.name}</button></li>)}</ul>}
+          {a.resources.length > 0 && (
+            <div className="mt-3 rounded-lg border border-brand-border p-3 text-sm"><p className="mb-1 font-semibold text-brand-navy">Resources</p>
+              <ul className="space-y-1">{a.resources.map((r) => <li key={r.id}><a href={r.url} target="_blank" rel="noreferrer noopener" className="text-brand-blue underline break-anywhere">{r.title}</a>{r.note ? <span className="text-brand-body"> · {r.note}</span> : null}</li>)}</ul>
+            </div>
+          )}
+          {asking === a.id && (
+            <div className="mt-3 space-y-2">
+              <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={2000} aria-label="What should change?" placeholder="What should change, and why?" className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm" />
+              <button className={btn} disabled={busy || text.trim().length < 5} onClick={() => send(a)}>{busy ? 'Sending…' : 'Send to admin'}</button>
+            </div>
+          )}
+        </Card>
+      ))}
+      {mine.length > 0 && (
+        <Card>
+          <h3 className="mb-2 font-heading text-lg font-bold text-brand-navy">My requests</h3>
+          <ul className="space-y-2 text-sm">
+            {mine.map((r) => (
+              <li key={r.id} className="border-b border-brand-border pb-2 last:border-0">
+                <span className="font-semibold">Week {r.week_number} · {r.title}{r.stack ? ` (${r.stack})` : ''}</span> <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-semibold ${r.status === 'open' ? 'bg-amber-100 text-amber-900' : r.status === 'implemented' ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-700'}`}>{STATUS[r.status]}</span>
+                <p className="whitespace-pre-wrap text-brand-body break-anywhere">{r.message}</p>
+                {r.admin_note && <p className="text-brand-navy">Admin: {r.admin_note}</p>}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// What learners wrote for their instructor: anonymous, filtered, only after a survey closes and only once enough learners in the stack responded.
+function StudentFeedback({ cohortId }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { api(`/facilitator/survey-notes?cohortId=${cohortId}`).then(setData).catch((e) => setErr(e.message)); }, [cohortId]);
+  return (
+    <div className="space-y-3">
+      <Card><p className="text-sm text-brand-body">Notes from learners in your stacks, from closed surveys. They are anonymous and filtered for respectfulness. To protect learners, a stack's notes appear only once at least {data?.minResponses ?? 3} learners in it have responded.</p></Card>
+      <Banner error={err} />
+      {!data && !err && <p className="text-brand-body">Loading…</p>}
+      {data?.surveys.length === 0 && <Card><p className="text-sm text-brand-body">Nothing yet. Notes appear here after a survey closes.</p></Card>}
+      {data?.surveys.map((s) => (
+        <Card key={`${s.surveyId}-${s.stack}`}>
+          <h3 className="font-heading text-lg font-bold text-brand-navy">{s.title} · {s.stack}</h3>
+          {s.held ? <p className="mt-1 text-sm text-brand-body">Not shown yet: only {s.responses} learner(s) in this stack have responded.</p>
+            : s.notes.length === 0 ? <p className="mt-1 text-sm text-brand-body">No notes were left for this stack.</p>
+              : <ul className="mt-2 list-disc space-y-2 pl-5 text-sm">{s.notes.map((n, i) => <li key={i} className="whitespace-pre-wrap break-anywhere">{n}</li>)}</ul>}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function FacilitatorHome() {
   const { user, logout } = useAuth();
   const [me, setMe] = useState(null);
@@ -174,13 +268,15 @@ export default function FacilitatorHome() {
             <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm font-semibold text-brand-navy">Cohort <select value={cohortId} onChange={(e) => setCohortId(e.target.value)} className={`${sel} font-normal ml-2`}>{cohorts.map((c) => <option key={c.cohortId} value={c.cohortId}>{c.name} ({c.status})</option>)}</select></label>
               <div role="tablist" className="flex gap-1">
-                {[['grading', 'Grading'], ['learners', 'My learners'], ['schedule', 'Schedule']].map(([k, l]) => (
+                {[['grading', 'Grading'], ['learners', 'My learners'], ['assessments', 'Assessments and resources'], ['feedback', 'Student feedback'], ['schedule', 'Schedule']].map(([k, l]) => (
                   <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === k ? 'bg-brand-blue text-white' : 'bg-white border border-brand-border text-brand-body'}`}>{l}</button>
                 ))}
               </div>
             </div>
             {cohortId && tab === 'grading' && <Grading key={cohortId} cohortId={cohortId} />}
             {cohortId && tab === 'learners' && <Learners key={cohortId} cohortId={cohortId} />}
+            {cohortId && tab === 'assessments' && <AssessmentsView key={cohortId} cohortId={cohortId} />}
+            {cohortId && tab === 'feedback' && <StudentFeedback key={cohortId} cohortId={cohortId} />}
             {cohortId && tab === 'schedule' && <Schedule key={cohortId} cohortId={cohortId} />}
           </>
         )}

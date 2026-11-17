@@ -23,7 +23,7 @@ app.use(helmet());
 // Small JSON bodies everywhere, except the one admin route that receives a base64-encoded assessment file; that route
 // parses its own (larger) body AFTER authentication (see routes/adminContent.js).
 const smallJson = express.json({ limit: '100kb' });
-const fileUploadPath = /^\/api\/admin\/assessments\/[0-9a-f-]{36}\/files$/i;
+const fileUploadPath = /^\/api\/(?:admin\/assessments\/[0-9a-f-]{36}\/files|learner\/surveys\/[0-9a-f-]{36}\/photo)$/i;
 app.use((req, res, next) => (req.method === 'POST' && fileUploadPath.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(cookieParser());
 
@@ -172,19 +172,25 @@ app.use(
   ...guard('admin'),
   require('./routes/admin'),
   require('./routes/adminOps'),
-  require('./routes/adminContent')
+  require('./routes/adminContent'),
+  require('./routes/adminReports'),
+  require('./routes/adminAttendance'),
+  require('./routes/adminResources'),
+  require('./routes/adminSurveys')
 );
 
 app.use(
   '/api/learner',
   ...guard('learner'),
-  require('./routes/learner')
+  require('./routes/learner'),
+  require('./routes/learnerSurveys')
 );
 
 app.use(
   '/api/facilitator',
   ...guard('facilitator'),
-  require('./routes/facilitator')
+  require('./routes/facilitator'),
+  require('./routes/facilitatorExtras')
 );
 
 // API fallback and centralized error handling.
